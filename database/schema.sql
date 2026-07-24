@@ -101,6 +101,22 @@ CREATE TABLE IF NOT EXISTS product_combination_rules (
   CONSTRAINT fk_combination_rules_product FOREIGN KEY (product_id) REFERENCES products(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS product_configuration_rule_sets (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  product_id BIGINT UNSIGNED NOT NULL,
+  rule_set_name VARCHAR(180) NOT NULL DEFAULT 'Product Configuration Rules',
+  option_schema_json JSON NOT NULL,
+  sku_generation_json JSON NOT NULL,
+  status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft',
+  published_at DATETIME DEFAULT NULL,
+  created_by BIGINT UNSIGNED DEFAULT NULL,
+  updated_by BIGINT UNSIGNED DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_rule_sets_product_status (product_id, status),
+  CONSTRAINT fk_rule_sets_product FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS warehouses (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   code VARCHAR(40) NOT NULL,
@@ -162,6 +178,30 @@ CREATE TABLE IF NOT EXISTS customer_contacts (
   UNIQUE KEY uk_contact_email_customer (customer_id, email),
   KEY idx_contact_email (email),
   CONSTRAINT fk_contacts_customer FOREIGN KEY (customer_id) REFERENCES customers(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS cart_items (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  session_id VARCHAR(128) NOT NULL,
+  customer_id BIGINT UNSIGNED DEFAULT NULL,
+  product_id BIGINT UNSIGNED DEFAULT NULL,
+  product_name VARCHAR(255) NOT NULL,
+  model VARCHAR(120) NOT NULL,
+  series VARCHAR(120) DEFAULT NULL,
+  image VARCHAR(255) DEFAULT NULL,
+  product_snapshot_json JSON NOT NULL,
+  configuration_json JSON NOT NULL,
+  quantity DECIMAL(16,3) NOT NULL DEFAULT 1,
+  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  price DECIMAL(14,4) DEFAULT NULL,
+  lead_time VARCHAR(80) DEFAULT NULL,
+  status ENUM('active','submitted','removed','expired') NOT NULL DEFAULT 'active',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_cart_session_status (session_id, status, updated_at),
+  KEY idx_cart_customer_status (customer_id, status, updated_at),
+  CONSTRAINT fk_cart_items_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+  CONSTRAINT fk_cart_items_product FOREIGN KEY (product_id) REFERENCES products(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS procurement_requests (

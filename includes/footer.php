@@ -84,6 +84,6 @@
         </form>
     </div>
 </div>
-<script src="<?= asset('js/app.js') ?>?v=1.0.0" defer></script>
+<script src="<?= asset('js/app.js') ?>?v=<?= e((string) filemtime(__DIR__ . '/../assets/js/app.js')) ?>" defer></script>
 </body>
 </html>

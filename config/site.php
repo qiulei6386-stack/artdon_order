@@ -27,6 +27,6 @@ return [
         ['label' => 'Support', 'path' => 'support', 'mega' => 'support'],
         ['label' => 'Contact', 'path' => 'contact'],
         ['label' => 'Account', 'path' => 'account/dashboard', 'icon' => 'user'],
-        ['label' => 'Cart', 'path' => 'cart', 'icon' => 'cart'],
+        ['label' => 'Project Cart', 'path' => 'cart', 'icon' => 'cart'],
     ],
 ];

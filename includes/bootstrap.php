@@ -26,6 +26,7 @@ if (!headers_sent()) {
 $site = require __DIR__ . '/../config/site.php';
 $sections = require __DIR__ . '/../config/content.php';
 $products = require __DIR__ . '/../config/products.php';
+$productConfigurations = require __DIR__ . '/../config/product_configuration.php';
 require_once __DIR__ . '/components.php';
 
 function e(mixed $value): string
@@ -152,6 +153,40 @@ function find_product(string $sku): ?array
     return null;
 }
 
+function product_configuration(array $product): array
+{
+    global $productConfigurations;
+    $category = (string) ($product['category'] ?? '');
+    $config = $productConfigurations[$product['sku']] ?? $productConfigurations[$category] ?? $productConfigurations['default'];
+    return array_merge([
+        'price_mode' => 'fixed',
+        'sku_order' => ['series'],
+        'options' => [],
+        'rules' => [],
+    ], $config);
+}
+
+function product_cart_payload(array $product): array
+{
+    $price = $product['price'] ?? null;
+    return [
+        'product_id' => $product['sku'],
+        'sku' => $product['sku'],
+        'product_name' => $product['name'],
+        'name' => $product['name'],
+        'model' => $product['sku'],
+        'series' => $product['series'],
+        'image' => $product['image'],
+        'unit_price' => is_numeric($price) ? (float) $price : null,
+        'base_unit_price' => is_numeric($price) ? (float) $price : null,
+        'price' => is_numeric($price) ? (float) $price : null,
+        'price_mode' => product_configuration($product)['price_mode'] ?? 'fixed',
+        'lead_time' => $product['lead_time'],
+        'moq' => (int) ($product['moq'] ?? 1),
+        'configuration_schema' => product_configuration($product),
+    ];
+}
+
 function products_for_page(array $page): array
 {
     global $products;
@@ -216,7 +251,7 @@ if ($path === '') {
     $page = ['title' => 'Contact', 'description' => 'Contact Artdon Lighting sales and technical teams.', 'path' => 'contact', 'section' => 'contact'];
     $template = 'contact';
 } elseif ($path === 'cart') {
-    $page = ['title' => 'Cart & Order Basket', 'description' => 'Review selected products and submit an order request.', 'path' => 'cart', 'section' => 'cart'];
+    $page = ['title' => 'Project Cart', 'description' => 'Review configured products and submit a commercial lighting project request.', 'path' => 'cart', 'section' => 'cart'];
     $template = 'cart';
 } elseif (preg_match('#^(product|configure)/([A-Za-z0-9-]+)$#', $path, $matches)) {
     $product = find_product($matches[2]);

@@ -42,6 +42,7 @@ function page_intro(array $page, string $extra = ''): string
 function product_card(array $p, bool $showStock = true, string $class = ''): string
 {
     $stockClass = $p['stock'] > 500 ? 'high' : ($p['stock'] > 100 ? 'medium' : 'low');
+    $cartPayload = product_cart_payload($p);
     ob_start(); ?>
     <article class="product-card <?= e($class) ?>" data-product-card data-category="<?= e($p['category']) ?>" data-subcategory="<?= e($p['subcategory']) ?>" data-stock-group="<?= e($p['stock_group']) ?>" data-stock="<?= e((string)$p['stock']) ?>" data-price="<?= e((string)$p['price']) ?>" data-new="<?= !empty($p['new']) ? '1' : '0' ?>" data-clearance="<?= !empty($p['clearance']) ? '1' : '0' ?>" data-power="<?= e(strtolower((string)($p['specs']['Power'] ?? ''))) ?>" data-dimming="<?= e(strtolower(implode(' ', $p['features']).' '.(string)($p['specs']['Dimming'] ?? ''))) ?>" data-optical="<?= e(strtolower((string)($p['specs']['Beam'] ?? '').' '.implode(' ', $p['features']))) ?>" data-search="<?= e(strtolower($p['sku'].' '.$p['name'].' '.$p['series'].' '.implode(' ', $p['features']))) ?>">
         <div class="product-media">
@@ -66,7 +67,7 @@ function product_card(array $p, bool $showStock = true, string $class = ''): str
                 <div><span class="price-label">From</span><strong class="price">USD <?= number_format((float)$p['price'], 2) ?></strong></div>
                 <div class="product-card-buttons">
                     <button type="button" class="button button-outline button-icon" data-rfq-open data-product='<?= e(json_encode(['sku'=>$p['sku'],'name'=>$p['name'],'price'=>$p['price']], JSON_UNESCAPED_SLASHES)) ?>' aria-label="Add to RFQ"><?= icon('quote') ?></button>
-                    <button type="button" class="button button-dark button-icon" data-add-cart data-product='<?= e(json_encode(['sku'=>$p['sku'],'name'=>$p['name'],'price'=>$p['price'],'image'=>$p['image'],'qty'=>1], JSON_UNESCAPED_SLASHES)) ?>' aria-label="Add to cart"><?= icon('cart') ?></button>
+                    <button type="button" class="button button-dark button-icon" data-quick-config-open data-product='<?= e(json_encode($cartPayload, JSON_UNESCAPED_SLASHES)) ?>' aria-label="Quick configure for Project Cart"><?= icon('cart') ?></button>
                 </div>
             </div>
         </div>

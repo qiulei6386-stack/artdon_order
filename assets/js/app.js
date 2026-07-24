@@ -209,25 +209,201 @@
   const CART_KEY = 'artdon_cart_v1';
   const getCart = () => storage.get(CART_KEY, []);
   const saveCart = cart => { storage.set(CART_KEY, cart); updateCartCount(); };
-  const cartKey = item => `${item.sku}|${item.configuration || ''}`;
-  function addToCart(product) {
+  const cartKey = item => `${item.product_id || item.baseSku || item.sku}|${item.configured_model || item.sku}|${JSON.stringify(item.configuration || item.configuration_text || '')}`;
+  const getOptionDefault = option => option.values.find(value => value.default) || option.values[0] || {};
+  const selectionFromSchema = (schema, overrides = {}) => Object.fromEntries((schema.options || []).map(option => [option.code, overrides[option.code] ?? getOptionDefault(option).code]));
+  const optionValue = (schema, code, selected) => (schema.options || []).find(option => option.code === code)?.values.find(value => value.code === selected[code]);
+  const displayValue = (schema, code, selected) => optionValue(schema, code, selected)?.label || selected[code] || '';
+  const ruleMatches = (rule, selected) => Object.entries(rule.when || {}).every(([code, value]) => selected[code] === value);
+  const isDenied = (schema, selected, optionCode, valueCode) => (schema.rules || []).some(rule => rule.type === 'deny' && rule.option === optionCode && rule.value === valueCode && ruleMatches(rule, selected));
+  const normalizeLegacyCartItem = item => ({
+    product_id: item.product_id || item.baseSku || item.sku,
+    product_name: item.product_name || item.name || '',
+    model: item.model || item.baseSku || item.sku,
+    series: item.series || '',
+    image: item.image || 'downlight.svg',
+    configured_model: item.configured_model || item.sku,
+    configuration: item.configuration && typeof item.configuration === 'object' ? item.configuration : {},
+    configuration_text: item.configuration_text || (typeof item.configuration === 'string' ? item.configuration : 'Standard ready-stock configuration'),
+    quantity: Number(item.quantity || item.qty || 1),
+    qty: Number(item.quantity || item.qty || 1),
+    unit_price: item.unit_price ?? item.price ?? null,
+    base_unit_price: item.base_unit_price ?? item.unit_price ?? item.price ?? null,
+    price: item.unit_price ?? item.price ?? null,
+    price_mode: item.price_mode || 'fixed',
+    lead_time: item.lead_time || 'To be confirmed',
+    schema: item.schema || item.configuration_schema || null,
+    created_time: item.created_time || new Date().toISOString()
+  });
+  function buildConfiguredSnapshot(product, selected, quantity) {
+    const schema = product.configuration_schema || {};
+    const skuParts = (schema.sku_order || ['series']).map(part => {
+      if (part === 'series') return product.series || product.sku;
+      return optionValue(schema, part, selected)?.sku || selected[part];
+    }).filter(Boolean);
+    const priceMode = product.price_mode || schema.price_mode || 'fixed';
+    let unitPrice = Number(product.base_unit_price ?? product.unit_price ?? product.price ?? 0);
+    (schema.options || []).forEach(option => {
+      const value = optionValue(schema, option.code, selected);
+      unitPrice += Number(value?.price_delta || 0);
+    });
+    const configuration = Object.fromEntries((schema.options || []).map(option => [option.code, selected[option.code]]));
+    const configurationText = (schema.options || []).map(option => `${option.label}: ${displayValue(schema, option.code, selected)}`).join(' · ');
+    return {
+      product_id: product.product_id || product.sku,
+      product_name: product.product_name || product.name,
+      name: product.product_name || product.name,
+      model: product.model || product.sku,
+      series: product.series,
+      image: product.image,
+      configured_model: skuParts.join('-'),
+      sku: skuParts.join('-'),
+      configuration,
+      configuration_text: configurationText,
+      quantity,
+      qty: quantity,
+      unit_price: priceMode === 'review' ? null : Number(unitPrice.toFixed(2)),
+      base_unit_price: product.base_unit_price ?? product.unit_price ?? product.price ?? null,
+      price: priceMode === 'review' ? null : Number(unitPrice.toFixed(2)),
+      price_mode: priceMode,
+      lead_time: product.lead_time || 'To be confirmed',
+      schema,
+      created_time: new Date().toISOString()
+    };
+  }
+  function addToProjectCart(product) {
     const cart = getCart();
     const key = cartKey(product);
     const existing = cart.find(item => cartKey(item) === key);
-    if (existing) existing.qty = Number(existing.qty || 0) + Number(product.qty || 1);
-    else cart.push({ ...product, qty: Number(product.qty || 1) });
+    if (existing) {
+      existing.quantity = Number(existing.quantity || existing.qty || 0) + Number(product.quantity || product.qty || 1);
+      existing.qty = existing.quantity;
+    } else {
+      cart.push({ ...product, quantity: Number(product.quantity || product.qty || 1), qty: Number(product.quantity || product.qty || 1) });
+    }
     saveCart(cart);
-    toast(`${product.sku} added to order basket`);
+    toast(`${product.configured_model || product.sku} added to Project Cart`);
     renderCart();
   }
+  const addToCart = product => addToProjectCart(normalizeLegacyCartItem(product));
   function updateCartCount() {
-    const count = getCart().reduce((sum, item) => sum + Number(item.qty || 0), 0);
-    $$('[data-cart-count]').forEach(el => el.textContent = String(count));
-  }
-  $$('[data-add-cart]').forEach(button => {
-    button.addEventListener('click', () => {
-      try { addToCart(JSON.parse(button.dataset.product || '{}')); } catch { toast('Unable to add this product'); }
+    const cart = getCart().map(normalizeLegacyCartItem);
+    const productCount = cart.length;
+    const qtyCount = cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    $$('[data-cart-count]').forEach(el => {
+      el.textContent = String(productCount);
+      el.title = `${productCount} Products · ${qtyCount} pcs`;
     });
+    $$('[data-cart-summary]').forEach(el => { el.textContent = `${productCount} Products · ${qtyCount} pcs`; });
+  }
+  let quickConfigProduct = null;
+  let quickConfigEditIndex = null;
+  let quickConfigSelection = {};
+  let quickConfigSnapshot = null;
+  const closeQuickConfig = () => {
+    const panel = $('[data-quick-config]');
+    if (!panel) return;
+    panel.classList.remove('is-open');
+    panel.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('quick-config-open');
+    quickConfigEditIndex = null;
+  };
+  function ensureQuickConfigPanel() {
+    let panel = $('[data-quick-config]');
+    if (panel) return panel;
+    panel = document.createElement('div');
+    panel.className = 'quick-config';
+    panel.dataset.quickConfig = '';
+    panel.setAttribute('aria-hidden', 'true');
+    panel.innerHTML = '<div class="quick-config-backdrop" data-quick-config-close></div><aside class="quick-config-panel" role="dialog" aria-modal="true" aria-label="Quick Configuration"><button class="quick-config-close" type="button" data-quick-config-close aria-label="Close">'+icons.close+'</button><div data-quick-config-content></div></aside>';
+    document.body.appendChild(panel);
+    $$('[data-quick-config-close]', panel).forEach(button => button.addEventListener('click', closeQuickConfig));
+    return panel;
+  }
+  function renderQuickConfig() {
+    const panel = ensureQuickConfigPanel();
+    const content = $('[data-quick-config-content]', panel);
+    if (!quickConfigProduct || !content) return;
+    const schema = quickConfigProduct.configuration_schema || {};
+    let selected = { ...quickConfigSelection };
+    (schema.options || []).forEach(option => {
+      if (isDenied(schema, selected, option.code, selected[option.code])) {
+        const replacement = option.values.find(value => !isDenied(schema, selected, option.code, value.code));
+        if (replacement) selected[option.code] = replacement.code;
+      }
+    });
+    quickConfigSelection = selected;
+    const qty = Math.max(Number(quickConfigProduct.moq || 1), Number($('[data-quick-config-qty]', panel)?.value || quickConfigProduct.quantity || quickConfigProduct.qty || quickConfigProduct.moq || 1));
+    quickConfigSnapshot = buildConfiguredSnapshot(quickConfigProduct, selected, qty);
+    const notices = (schema.rules || []).filter(rule => rule.type === 'deny' && ruleMatches(rule, selected)).map(rule => rule.message).filter(Boolean);
+    const optionHtml = (schema.options || []).map(option => `<div class="quick-config-field"><span>${escapeHtml(option.label)}</span><div class="quick-config-options">${option.values.map(value => {
+      const disabled = isDenied(schema, selected, option.code, value.code);
+      const active = selected[option.code] === value.code;
+      return `<button type="button" data-quick-option="${escapeHtml(option.code)}" data-value="${escapeHtml(value.code)}" class="${active ? 'is-active' : ''}" ${disabled ? 'disabled' : ''}>${escapeHtml(value.label)}</button>`;
+    }).join('')}</div></div>`).join('');
+    const priceHtml = quickConfigSnapshot.price_mode === 'review' || quickConfigSnapshot.unit_price === null ? 'Price confirmed after review' : `${cartMoney(quickConfigSnapshot.unit_price)} / pcs`;
+    content.innerHTML = `<header class="quick-config-head"><img src="${route(`assets/img/${quickConfigProduct.image || 'downlight.svg'}`)}" alt=""><div><span>Quick Configuration</span><h2>${escapeHtml(quickConfigProduct.product_name || quickConfigProduct.name || '')}</h2><p>${escapeHtml(quickConfigProduct.model || quickConfigProduct.sku || '')} · ${escapeHtml(quickConfigProduct.series || '')} Series</p></div></header><div class="quick-config-scroll">${optionHtml}<div class="quick-config-field"><span>Quantity</span><div class="quick-qty"><button type="button" data-quick-qty-minus>${icons.minus}</button><input type="number" min="${Number(quickConfigProduct.moq || 1)}" value="${qty}" data-quick-config-qty><button type="button" data-quick-qty-plus>${icons.plus}</button></div><small>MOQ: ${Number(quickConfigProduct.moq || 1)} pcs</small></div>${notices.length ? `<p class="quick-config-rule-note">${escapeHtml([...new Set(notices)].join(' '))}</p>` : ''}</div><footer class="quick-config-foot"><div><span>Your Selection</span><strong data-quick-config-model>${escapeHtml(quickConfigSnapshot.configured_model)}</strong></div><div><span>Estimated Price</span><strong>${escapeHtml(priceHtml)}</strong></div><button type="button" class="button button-dark button-large button-block" data-quick-config-submit>${quickConfigEditIndex === null ? 'ADD TO PROJECT CART' : 'SAVE CHANGES'}</button></footer>`;
+    $$('[data-quick-option]', content).forEach(button => button.addEventListener('click', () => {
+      if (button.disabled) return;
+      quickConfigSelection[button.dataset.quickOption] = button.dataset.value;
+      renderQuickConfig();
+    }));
+    $('[data-quick-qty-minus]', content)?.addEventListener('click', () => {
+      quickConfigProduct.quantity = Math.max(Number(quickConfigProduct.moq || 1), qty - 1);
+      renderQuickConfig();
+    });
+    $('[data-quick-qty-plus]', content)?.addEventListener('click', () => {
+      quickConfigProduct.quantity = qty + 1;
+      renderQuickConfig();
+    });
+    $('[data-quick-config-qty]', content)?.addEventListener('change', event => {
+      quickConfigProduct.quantity = Math.max(Number(quickConfigProduct.moq || 1), Number(event.currentTarget.value || quickConfigProduct.moq || 1));
+      renderQuickConfig();
+    });
+    $('[data-quick-config-submit]', content)?.addEventListener('click', () => {
+      if (!quickConfigSnapshot) return;
+      if (quickConfigEditIndex === null) addToProjectCart(quickConfigSnapshot);
+      else {
+        const cart = getCart();
+        cart[quickConfigEditIndex] = quickConfigSnapshot;
+        saveCart(cart);
+        renderCart();
+        toast(`${quickConfigSnapshot.configured_model} updated`);
+      }
+      closeQuickConfig();
+    });
+  }
+  function openQuickConfig(product, editIndex = null) {
+    quickConfigProduct = product;
+    quickConfigEditIndex = editIndex;
+    quickConfigSelection = selectionFromSchema(product.configuration_schema || {}, product.configuration || {});
+    quickConfigProduct.quantity = Number(product.quantity || product.qty || product.moq || 1);
+    const panel = ensureQuickConfigPanel();
+    renderQuickConfig();
+    panel.classList.add('is-open');
+    panel.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('quick-config-open');
+  }
+  $$('[data-quick-config-open]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      try { openQuickConfig(JSON.parse(button.dataset.product || '{}')); } catch { toast('Unable to configure this product'); }
+    });
+  });
+  $$('[data-add-cart]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      try {
+        const product = JSON.parse(button.dataset.product || '{}');
+        if (product.configuration_schema) openQuickConfig(product);
+        else addToCart(product);
+      } catch {
+        toast('Unable to configure this product');
+      }
+    });
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeQuickConfig();
   });
 
   // Product gallery thumbnails
@@ -331,41 +507,67 @@
     const cart = getCart();
     const checkoutButton = $('[data-cart-checkout]');
     if (!cart.length) {
-      container.innerHTML = `<div class="empty-cart"><div>${icons.cart}</div><h2>Your order basket is empty</h2><p>Add ready-stock or configured products, then submit one consolidated order request.</p><a class="button button-dark" href="${route('ready-stock')}">Browse ready stock</a></div>`;
+      container.innerHTML = `<div class="empty-cart"><div>${icons.cart}</div><h2>Your Project Cart is empty</h2><p>Add configured ready-stock or product items, then submit one consolidated project request.</p><a class="button button-dark" href="${route('ready-stock')}">Browse ready stock</a></div>`;
       if (checkoutButton) checkoutButton.disabled = true;
     } else {
-      container.innerHTML = cart.map((item, index) => `<div class="cart-row" data-cart-row="${index}"><img src="${route(`assets/img/${item.image || 'downlight.svg'}`)}" alt=""><div><h3>${escapeHtml(item.sku)} ${escapeHtml(item.name || '')}</h3><p>${escapeHtml(item.configuration || 'Standard ready-stock configuration')}</p></div><div class="cart-row-price">${cartMoney(item.price)}</div><div class="cart-row-qty"><button type="button" data-cart-minus="${index}">${icons.minus}</button><input aria-label="Quantity" type="number" min="1" value="${Number(item.qty || 1)}" data-cart-qty="${index}"><button type="button" data-cart-plus="${index}">${icons.plus}</button></div><button type="button" class="cart-remove" data-cart-remove="${index}" aria-label="Remove">${icons.close}</button></div>`).join('');
+      container.innerHTML = `<div class="project-cart-table"><div class="project-cart-head"><span>Product</span><span>Configuration</span><span>Quantity</span><span>Price</span><span>Lead Time</span><span>Action</span></div>${cart.map((rawItem, index) => {
+        const item = normalizeLegacyCartItem(rawItem);
+        const price = item.price_mode === 'review' || item.unit_price === null ? 'Review' : cartMoney(item.unit_price);
+        const configHtml = item.configuration && Object.keys(item.configuration).length && item.schema ? (item.schema.options || []).map(option => `<span>${escapeHtml(displayValue(item.schema, option.code, item.configuration))}</span>`).join('') : `<span>${escapeHtml(item.configuration_text)}</span>`;
+        return `<div class="project-cart-row" data-cart-row="${index}"><div class="project-cart-product"><img src="${route(`assets/img/${item.image || 'downlight.svg'}`)}" alt=""><span><strong>${escapeHtml(item.model || item.sku)}</strong><small>${escapeHtml(item.product_name || '')}</small><small>${escapeHtml(item.configured_model || item.sku)}</small></span></div><div class="project-cart-config">${configHtml}</div><div class="cart-row-qty"><button type="button" data-cart-minus="${index}">${icons.minus}</button><input aria-label="Quantity" type="number" min="1" value="${Number(item.quantity || 1)}" data-cart-qty="${index}"><button type="button" data-cart-plus="${index}">${icons.plus}</button></div><div class="cart-row-price">${escapeHtml(price)}</div><div class="project-cart-lead">${escapeHtml(item.lead_time)}</div><div class="project-cart-actions"><button type="button" data-cart-edit="${index}">Edit</button><button type="button" data-cart-remove="${index}">Delete</button></div></div>`;
+      }).join('')}</div>`;
       if (checkoutButton) checkoutButton.disabled = false;
     }
-    const itemCount = cart.reduce((sum, item) => sum + Number(item.qty || 0), 0);
-    const subtotal = cart.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.price || 0), 0);
+    const normalizedCart = cart.map(normalizeLegacyCartItem);
+    const itemCount = normalizedCart.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const subtotal = normalizedCart.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0);
+    $('[data-cart-product-total]') && ($('[data-cart-product-total]').textContent = String(normalizedCart.length));
     $('[data-cart-item-total]') && ($('[data-cart-item-total]').textContent = String(itemCount));
     $('[data-cart-subtotal]') && ($('[data-cart-subtotal]').textContent = cartMoney(subtotal));
     $('[data-cart-total]') && ($('[data-cart-total]').textContent = cartMoney(subtotal));
-    $('[data-cart-json]') && ($('[data-cart-json]').value = JSON.stringify(cart));
+    $('[data-cart-json]') && ($('[data-cart-json]').value = JSON.stringify(normalizedCart));
     $$('[data-cart-minus]').forEach(button => button.addEventListener('click', () => changeCartQty(Number(button.dataset.cartMinus), -1)));
     $$('[data-cart-plus]').forEach(button => button.addEventListener('click', () => changeCartQty(Number(button.dataset.cartPlus), 1)));
     $$('[data-cart-qty]').forEach(input => input.addEventListener('change', () => setCartQty(Number(input.dataset.cartQty), Number(input.value))));
     $$('[data-cart-remove]').forEach(button => button.addEventListener('click', () => removeCartItem(Number(button.dataset.cartRemove))));
+    $$('[data-cart-edit]').forEach(button => button.addEventListener('click', () => {
+      const index = Number(button.dataset.cartEdit);
+      const item = normalizeLegacyCartItem(getCart()[index] || {});
+      if (!item.schema) return toast('This legacy item cannot be edited');
+      openQuickConfig({
+        ...item,
+        product_id: item.product_id,
+        product_name: item.product_name,
+        name: item.product_name,
+        sku: item.model,
+        unit_price: item.price_mode === 'review' ? null : item.unit_price,
+        base_unit_price: item.base_unit_price,
+        price: item.price_mode === 'review' ? null : item.unit_price,
+        configuration_schema: item.schema,
+        moq: 1
+      }, index);
+    }));
   }
   function setCartQty(index, qty) {
     const cart = getCart();
     if (!cart[index]) return;
-    cart[index].qty = Math.max(1, Number.isFinite(qty) ? qty : 1);
+    const nextQty = Math.max(1, Number.isFinite(qty) ? qty : 1);
+    cart[index].qty = nextQty;
+    cart[index].quantity = nextQty;
     saveCart(cart);
     renderCart();
   }
   function changeCartQty(index, delta) {
     const cart = getCart();
     if (!cart[index]) return;
-    setCartQty(index, Number(cart[index].qty || 1) + delta);
+    setCartQty(index, Number(cart[index].quantity || cart[index].qty || 1) + delta);
   }
   function removeCartItem(index) {
     const cart = getCart();
     const removed = cart.splice(index, 1)[0];
     saveCart(cart);
     renderCart();
-    if (removed) toast(`${removed.sku} removed from basket`);
+    if (removed) toast(`${removed.configured_model || removed.sku} removed from Project Cart`);
   }
   $('[data-cart-checkout]')?.addEventListener('click', () => {
     const formWrap = $('[data-checkout-form]');

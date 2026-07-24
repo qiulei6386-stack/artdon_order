@@ -48,7 +48,7 @@ $currentSection = $page['section'] ?? '';
                     <a href="<?= url($navPath) ?>" <?= $hasMega ? 'data-mega-trigger' : '' ?>>
                         <?php if (($navItem['icon'] ?? '') === 'user'): ?><?= icon('user') ?><?php endif; ?>
                         <?php if (($navItem['icon'] ?? '') === 'cart'): ?><?= icon('cart') ?><span class="cart-count" data-cart-count>0</span><?php endif; ?>
-                        <span><?= e($navItem['label']) ?></span>
+                        <span><?= e($navItem['label']) ?><?php if (($navItem['icon'] ?? '') === 'cart'): ?><small class="cart-nav-summary" data-cart-summary>0 Products · 0 pcs</small><?php endif; ?></span>
                     </a>
                     <?php if ($hasMega):
                         $megaKey = $navItem['mega'];
