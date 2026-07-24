@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f8f9fb"/><stop offset="1" stop-color="#e5e9ee"/></linearGradient>
+<linearGradient id="black" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#30353d"/><stop offset=".55" stop-color="#0e1116"/><stop offset="1" stop-color="#000"/></linearGradient>
+<linearGradient id="metal" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#767d87"/><stop offset=".25" stop-color="#1b1f25"/><stop offset=".55" stop-color="#5a626d"/><stop offset="1" stop-color="#11151a"/></linearGradient>
+<radialGradient id="light" cx="50%" cy="50%" r="55%"><stop stop-color="#fffde9"/><stop offset=".45" stop-color="#ffe7a3"/><stop offset="1" stop-color="#d18b27"/></radialGradient>
+<filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#0b0d10" flood-opacity=".22"/></filter>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="22"/></filter>
+
+</defs>
+<rect width="1200" height="900" fill="#eef1f5"/><rect x="70" y="70" width="1060" height="760" rx="30" fill="#fff" stroke="#d6dbe2" stroke-width="5"/><rect x="110" y="120" width="480" height="620" rx="18" fill="#f5f7f9"/><g stroke="#9ca5b0" stroke-width="5" fill="none"><path d="M160 190h350v470H160zM210 240h110v160H210zM350 240h110v160H350zM210 450h250v120H210z"/><path d="M155 690h370M135 185v480"/></g><g fill="#155dfc"><circle cx="265" cy="315" r="18"/><circle cx="405" cy="315" r="18"/><circle cx="335" cy="510" r="18"/></g><rect x="650" y="120" width="390" height="90" rx="15" fill="#0b0d10"/><text x="690" y="172" font-family="Arial" font-size="34" font-weight="800" fill="#fff">PROJECT PACKAGE</text><g fill="#fff" stroke="#d8dde4" stroke-width="4"><rect x="650" y="245" width="390" height="120" rx="15"/><rect x="650" y="390" width="390" height="120" rx="15"/><rect x="650" y="535" width="390" height="120" rx="15"/></g><g font-family="Arial" fill="#15191f"><text x="690" y="295" font-size="26" font-weight="800">01 PRODUCT MATCH</text><text x="690" y="330" font-size="18" fill="#69717e">Models · optics · drivers</text><text x="690" y="440" font-size="26" font-weight="800">02 TECHNICAL FILES</text><text x="690" y="475" font-size="18" fill="#69717e">IES · datasheet · drawing</text><text x="690" y="585" font-size="26" font-weight="800">03 COMMERCIAL RFQ</text><text x="690" y="620" font-size="18" fill="#69717e">Price · lead time · shipping</text></g>
+</svg>

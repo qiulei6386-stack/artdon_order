@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /account
+Disallow: /cart
+Disallow: /configure/
+Disallow: /api/
+Disallow: /storage/
+Sitemap: https://shop.artdonlighting.com/sitemap.php

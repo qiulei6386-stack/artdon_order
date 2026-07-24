@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f8f9fb"/><stop offset="1" stop-color="#e5e9ee"/></linearGradient>
+<linearGradient id="black" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#30353d"/><stop offset=".55" stop-color="#0e1116"/><stop offset="1" stop-color="#000"/></linearGradient>
+<linearGradient id="metal" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#767d87"/><stop offset=".25" stop-color="#1b1f25"/><stop offset=".55" stop-color="#5a626d"/><stop offset="1" stop-color="#11151a"/></linearGradient>
+<radialGradient id="light" cx="50%" cy="50%" r="55%"><stop stop-color="#fffde9"/><stop offset=".45" stop-color="#ffe7a3"/><stop offset="1" stop-color="#d18b27"/></radialGradient>
+<filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#0b0d10" flood-opacity=".22"/></filter>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="22"/></filter>
+<linearGradient id="night" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#111723"/><stop offset="1" stop-color="#05070a"/></linearGradient><linearGradient id="warm" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff3c2"/><stop offset="1" stop-color="#d7902e"/></linearGradient>
+</defs>
+<rect width="1200" height="800" fill="#1a120f"/><path d="M0 0h1200v220H0z" fill="#2b211d"/><g fill="#ffe1a0" filter="url(#soft)" opacity=".6"><circle cx="250" cy="190" r="70"/><circle cx="600" cy="150" r="90"/><circle cx="950" cy="190" r="70"/></g><g fill="#f5cf82"><circle cx="250" cy="190" r="13"/><circle cx="600" cy="150" r="15"/><circle cx="950" cy="190" r="13"/></g><path d="M0 620h1200v180H0z" fill="#17100c"/><rect x="150" y="300" width="900" height="300" rx="30" fill="#4b3227"/><rect x="210" y="360" width="220" height="150" rx="18" fill="#8b5d45"/><rect x="490" y="360" width="220" height="150" rx="18" fill="#8b5d45"/><rect x="770" y="360" width="220" height="150" rx="18" fill="#8b5d45"/><g fill="#d4a461"><ellipse cx="320" cy="560" rx="120" ry="30"/><ellipse cx="600" cy="560" rx="120" ry="30"/><ellipse cx="880" cy="560" rx="120" ry="30"/></g>
+</svg>

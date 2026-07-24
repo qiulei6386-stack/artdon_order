@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f8f9fb"/><stop offset="1" stop-color="#e5e9ee"/></linearGradient>
+<linearGradient id="black" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#30353d"/><stop offset=".55" stop-color="#0e1116"/><stop offset="1" stop-color="#000"/></linearGradient>
+<linearGradient id="metal" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#767d87"/><stop offset=".25" stop-color="#1b1f25"/><stop offset=".55" stop-color="#5a626d"/><stop offset="1" stop-color="#11151a"/></linearGradient>
+<radialGradient id="light" cx="50%" cy="50%" r="55%"><stop stop-color="#fffde9"/><stop offset=".45" stop-color="#ffe7a3"/><stop offset="1" stop-color="#d18b27"/></radialGradient>
+<filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#0b0d10" flood-opacity=".22"/></filter>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="22"/></filter>
+<linearGradient id="night" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#111723"/><stop offset="1" stop-color="#05070a"/></linearGradient><linearGradient id="warm" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff3c2"/><stop offset="1" stop-color="#d7902e"/></linearGradient>
+</defs>
+<rect width="1200" height="800" fill="#11161d"/><path d="M0 0h1200v160H0z" fill="#0b0f14"/><g stroke="#f7d991" stroke-width="7"><path d="M90 90h340M520 90h340M940 90h200"/></g><path d="M0 640h1200v160H0z" fill="#17100d"/><g fill="#b58d62"><rect x="70" y="240" width="250" height="360"/><rect x="350" y="240" width="250" height="360"/><rect x="630" y="240" width="250" height="360"/><rect x="910" y="240" width="220" height="360"/></g><g fill="#191d22"><rect x="105" y="300" width="180" height="240"/><rect x="385" y="300" width="180" height="240"/><rect x="665" y="300" width="180" height="240"/><rect x="945" y="300" width="150" height="240"/></g><g fill="#d9a967"><ellipse cx="210" cy="330" rx="55" ry="18"/><ellipse cx="490" cy="330" rx="55" ry="18"/><ellipse cx="770" cy="330" rx="55" ry="18"/><ellipse cx="1020" cy="330" rx="50" ry="18"/></g>
+</svg>

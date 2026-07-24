@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f8f9fb"/><stop offset="1" stop-color="#e5e9ee"/></linearGradient>
+<linearGradient id="black" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#30353d"/><stop offset=".55" stop-color="#0e1116"/><stop offset="1" stop-color="#000"/></linearGradient>
+<linearGradient id="metal" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#767d87"/><stop offset=".25" stop-color="#1b1f25"/><stop offset=".55" stop-color="#5a626d"/><stop offset="1" stop-color="#11151a"/></linearGradient>
+<radialGradient id="light" cx="50%" cy="50%" r="55%"><stop stop-color="#fffde9"/><stop offset=".45" stop-color="#ffe7a3"/><stop offset="1" stop-color="#d18b27"/></radialGradient>
+<filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#0b0d10" flood-opacity=".22"/></filter>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="22"/></filter>
+
+</defs>
+<rect width="1200" height="900" fill="#f6f7f9"/><rect x="80" y="70" width="1040" height="760" rx="24" fill="#fff" stroke="#d6dbe2" stroke-width="5"/><g stroke="#727b86" fill="none" stroke-width="7"><path d="M150 150h900v600H150zM150 400h900M460 150v600M780 150v600"/><path d="M225 150v250M940 400v350"/></g><g fill="#155dfc"><circle cx="300" cy="275" r="24"/><circle cx="610" cy="275" r="24"/><circle cx="910" cy="275" r="24"/><circle cx="300" cy="575" r="24"/><circle cx="610" cy="575" r="24"/><circle cx="910" cy="575" r="24"/></g><g stroke="#155dfc" stroke-width="5" stroke-dasharray="12 12" fill="none"><circle cx="300" cy="275" r="95"/><circle cx="610" cy="275" r="95"/><circle cx="910" cy="275" r="95"/><circle cx="300" cy="575" r="95"/><circle cx="610" cy="575" r="95"/><circle cx="910" cy="575" r="95"/></g><text x="600" y="805" text-anchor="middle" font-family="Arial" font-size="22" fill="#69717e">Illustrative lighting plan · product positions and beam coverage</text>
+</svg>

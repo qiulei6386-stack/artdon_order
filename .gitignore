@@ -1,0 +1,14 @@
+.DS_Store
+*.log
+*.tmp
+*.bak
+*.zip
+.env
+.env.*
+/vendor/
+/node_modules/
+/storage/*
+!/storage/.gitkeep
+!/storage/.htaccess
+/uploads/*
+!/uploads/.gitkeep
