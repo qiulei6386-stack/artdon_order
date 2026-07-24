@@ -1,5 +1,6 @@
 .DS_Store
 SERVER.md
+CONTEXT.md
 *.pem
 *.key
 *.command
