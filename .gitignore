@@ -1,4 +1,8 @@
 .DS_Store
+SERVER.md
+*.pem
+*.key
+*.command
 *.log
 *.tmp
 *.bak
