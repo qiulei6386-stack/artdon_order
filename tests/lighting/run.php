@@ -200,6 +200,14 @@ try {
     }
     pass('Auto-layout candidate evaluations stay within the hard budget');
 
+    $corridor = $optimizer->optimize($constant, array_merge($autoRoom, [
+        'length_m' => 20.0,
+        'width_m' => 2.0,
+        'target_lux' => 100.0,
+    ]), ['max_fixtures' => 4]);
+    sameValue(4, $corridor['layout']['columns'], 'A long corridor can retain a practical single-row layout');
+    sameValue(1, $corridor['layout']['rows'], 'The corridor exception does not force an unnecessary second row');
+
     $worstCaseRoom = array_merge($autoRoom, [
         'length_m' => 100.0,
         'width_m' => 100.0,

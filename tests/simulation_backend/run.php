@@ -160,6 +160,39 @@ try {
         'the page default 10 by 8 metre auto-layout succeeds within public caps'
     );
     simulationTest(
+        (int) ($defaultResult['layout']['columns'] ?? 0) > 1
+            && (int) ($defaultResult['layout']['rows'] ?? 0) > 1,
+        'a normal rectangular room receives a two-dimensional fixture layout'
+    );
+    $alProfile = artdon_lighting_find_profile('IES-DEMO-AL1010-36D', $pdo);
+    simulationTest(is_array($alProfile), 'the AL1010 browser-verification profile is available');
+    $alBrowserResult = artdon_lighting_simulate_profile($alProfile, [
+        'mode' => 'auto_layout',
+        'room' => [
+            'type' => 'retail',
+            'length_m' => 10,
+            'width_m' => 8,
+            'height_m' => 4,
+            'installation_height_m' => 3.2,
+            'calculation_plane_m' => 0,
+            'mounting_type' => 'recessed',
+            'target_lux' => 400,
+        ],
+        'options' => ['grid_nx' => 29, 'grid_ny' => 23, 'max_fixtures' => 96],
+        'maintenance_factor' => 0.8,
+    ]);
+    $alColumns = (int) ($alBrowserResult['layout']['columns'] ?? 0);
+    $alRows = (int) ($alBrowserResult['layout']['rows'] ?? 0);
+    simulationTest(
+        $alColumns > 1 && $alRows > 1,
+        sprintf(
+            'the AL1010 browser scenario avoids an impractical single-line layout (%d x %d, U0 %.2f)',
+            $alColumns,
+            $alRows,
+            (float) ($alBrowserResult['metrics']['uniformity_u0'] ?? 0)
+        )
+    );
+    simulationTest(
         $defaultElapsed < 4.0,
         sprintf('the page default simulation completes promptly (%.3f seconds)', $defaultElapsed)
     );

@@ -15,6 +15,7 @@ final class LayoutOptimizer
     private const MAX_LAYOUT_SHAPES_PER_QUANTITY = 2;
     private const COARSE_GRID_AXIS = 8;
     private const TIME_BUDGET_SECONDS = 2.5;
+    private const MAX_ROOM_ASPECT_FOR_TWO_DIMENSIONAL_LAYOUT = 4.0;
 
     private IlluminanceCalculator $calculator;
     private ?Closure $candidateEvaluator;
@@ -176,12 +177,21 @@ final class LayoutOptimizer
     private function candidateShapes(int $quantity, float $length, float $width): array
     {
         $shapes = [];
+        $roomAspect = max($length, $width) / min($length, $width);
+        $requiresTwoDimensions = $quantity >= 4
+            && $roomAspect <= self::MAX_ROOM_ASPECT_FOR_TWO_DIMENSIONAL_LAYOUT;
         for ($columns = 1; $columns * $columns <= $quantity; $columns++) {
             if ($quantity % $columns !== 0) {
                 continue;
             }
             $rows = intdiv($quantity, $columns);
             foreach ([[$columns, $rows], [$rows, $columns]] as [$candidateColumns, $candidateRows]) {
+                if (
+                    $requiresTwoDimensions
+                    && ($candidateColumns === 1 || $candidateRows === 1)
+                ) {
+                    continue;
+                }
                 $key = $candidateColumns . 'x' . $candidateRows;
                 $spacingX = $length / $candidateColumns;
                 $spacingY = $width / $candidateRows;
