@@ -5,12 +5,12 @@
         <div class="home-hero-copy">
             <span class="hero-label">ARTDON PROCUREMENT PLATFORM · <?= e($site['version']) ?></span>
             <h1>Source commercial lighting faster.</h1>
-            <p>Find ready stock, configure products, request samples or upload a complete project schedule—all from one procurement platform.</p>
+            <p>Find products, test configurations, request samples or upload a complete project schedule—all from one procurement platform.</p>
             <div class="hero-actions">
-                <a class="button button-blue button-large" href="<?= url('ready-stock') ?>">Browse ready stock <?= icon('arrow') ?></a>
+                <a class="button button-blue button-large" href="<?= url('ready-stock') ?>">Browse product catalogue <?= icon('arrow') ?></a>
                 <a class="button button-outline-light button-large" href="<?= url('procurement/project-package') ?>">Upload BOQ <?= icon('upload') ?></a>
             </div>
-            <div class="hero-proof"><span><?= icon('check') ?> Configurable products</span><span><?= icon('check') ?> Confirmed lead times</span><span><?= icon('check') ?> Global delivery</span></div>
+            <div class="hero-proof"><span><?= icon('check') ?> Configurable products</span><span><?= icon('check') ?> Commercial review before confirmation</span><span><?= icon('check') ?> Global delivery support</span></div>
         </div>
         <div class="procurement-search-card">
             <div class="search-card-tabs" role="tablist">
@@ -40,8 +40,8 @@
 
 <section class="trust-metrics">
     <div class="container trust-metrics-grid">
-        <div><?= icon('stock') ?><span><strong>8,645</strong> units currently listed</span></div>
-        <div><?= icon('clock') ?><span><strong>2–7 days</strong> typical stock dispatch</span></div>
+        <div><?= icon('stock') ?><span><strong>Demo</strong> inventory and pricing dataset</span></div>
+        <div><?= icon('clock') ?><span><strong>Review</strong> stock and lead time before order</span></div>
         <div><?= icon('shield') ?><span><strong>100%</strong> order review before confirmation</span></div>
         <div><?= icon('truck') ?><span><strong>Global</strong> project shipping support</span></div>
     </div>
@@ -51,7 +51,7 @@
     <div class="container">
         <?= section_heading('Start here', 'Choose the fastest procurement route', 'The homepage is designed around purchasing tasks—not a company introduction.') ?>
         <div class="procurement-entry-grid">
-            <a class="procurement-entry-card card-blue" href="<?= url('ready-stock') ?>"><div class="entry-icon"><?= icon('stock') ?></div><span>01</span><h3>Ready Stock</h3><p>See available quantity, price and dispatch lead time.</p><strong>Shop current stock <?= icon('arrow') ?></strong></a>
+            <a class="procurement-entry-card card-blue" href="<?= url('ready-stock') ?>"><div class="entry-icon"><?= icon('stock') ?></div><span>01</span><h3>Ready Stock</h3><p>Review indicative quantity, price and dispatch fields, then request confirmation.</p><strong>Browse catalogue <?= icon('arrow') ?></strong></a>
             <a class="procurement-entry-card" href="<?= url('procurement/sample-order') ?>"><div class="entry-icon"><?= icon('sample') ?></div><span>02</span><h3>Sample Order</h3><p>Request samples for evaluation, mock-up or client approval.</p><strong>Order samples <?= icon('arrow') ?></strong></a>
             <a class="procurement-entry-card" href="<?= url('procurement/quick-rfq') ?>"><div class="entry-icon"><?= icon('quote') ?></div><span>03</span><h3>Quick RFQ</h3><p>Send models, quantities and target delivery date for review.</p><strong>Request pricing <?= icon('arrow') ?></strong></a>
             <a class="procurement-entry-card card-dark" href="<?= url('procurement/project-package') ?>"><div class="entry-icon"><?= icon('project') ?></div><span>04</span><h3>Project Package</h3><p>Upload a BOQ and receive a coordinated lighting proposal.</p><strong>Upload project <?= icon('arrow') ?></strong></a>
@@ -61,10 +61,10 @@
 
 <section class="section inventory-section">
     <div class="container">
-        <?= section_heading('Live procurement', 'Ready stock available now', 'Inventory shown here is demo data ready to connect to your ERP or warehouse API.', 'ready-stock', 'View all ready stock') ?>
+        <?= section_heading('Procurement preview', 'Sample ready-stock catalogue', 'All price, inventory and lead-time values below are demonstration data until the ERP connection is approved.', 'ready-stock', 'View sample catalogue') ?>
         <div class="inventory-toolbar">
             <div class="inventory-tabs"><button class="is-active" data-product-filter="all">All</button><button data-product-filter="track-lighting">Track</button><button data-product-filter="downlights">Downlights</button><button data-product-filter="magnetic-system">Magnetic</button><button data-product-filter="accessories">Accessories</button></div>
-            <div class="inventory-updated"><span class="live-dot"></span> Inventory updated today</div>
+            <div class="inventory-updated"><span class="live-dot"></span> Demo data · not live inventory</div>
         </div>
         <div class="product-grid product-grid-four" data-filter-grid>
             <?php foreach (array_slice($products,0,8) as $p): ?><?= product_card($p,true) ?><?php endforeach; ?>
@@ -82,8 +82,8 @@
                 ['slug'=>'track-lighting','title'=>'Track Lighting','desc'=>'Spot, linear, wall washer, zoom and pendant.','img'=>'track.svg','count'=>'6 families'],
                 ['slug'=>'magnetic','title'=>'Magnetic System','desc'=>'48V tracks, luminaires and connectors.','img'=>'magnetic.svg','count'=>'Complete system'],
                 ['slug'=>'linear','title'=>'Linear Lighting','desc'=>'Architectural continuous linear solutions.','img'=>'linear.svg','count'=>'Custom length'],
-                ['slug'=>'driver','title'=>'LED Drivers','desc'=>'On/off, 0–10V, phase-cut and DALI-2.','img'=>'driver.svg','count'=>'High stock'],
-                ['slug'=>'accessories','title'=>'Accessories','desc'=>'Optics, reflectors, connectors and mounting kits.','img'=>'accessory.svg','count'=>'High margin'],
+                ['slug'=>'driver','title'=>'LED Drivers','desc'=>'On/off, 0–10V, phase-cut and DALI-2.','img'=>'driver.svg','count'=>'Demo category'],
+                ['slug'=>'accessories','title'=>'Accessories','desc'=>'Optics, reflectors, connectors and mounting kits.','img'=>'accessory.svg','count'=>'Demo category'],
             ]; foreach($cats as $cat): ?>
                 <a class="category-tile" href="<?= url('products/'.$cat['slug']) ?>"><div class="category-tile-media"><img src="<?= asset('img/'.$cat['img']) ?>" alt=""></div><div><span><?= e($cat['count']) ?></span><h3><?= e($cat['title']) ?></h3><p><?= e($cat['desc']) ?></p><strong>Explore <?= icon('arrow') ?></strong></div></a>
             <?php endforeach; ?>

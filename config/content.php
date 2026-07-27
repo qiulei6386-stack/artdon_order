@@ -6,17 +6,17 @@ return [
     'ready-stock' => [
         'title' => 'Ready Stock',
         'eyebrow' => 'Fast procurement',
-        'description' => 'Live inventory, transparent lead times and rapid sample or bulk ordering.',
+        'description' => 'Review ready-stock candidates, then confirm inventory, lead time and commercial terms with Artdon.',
         'template' => 'listing',
         'items' => [
-            'all-ready-stock' => ['title' => 'All Ready Stock', 'description' => 'Browse all immediately available products and accessories.'],
+            'all-ready-stock' => ['title' => 'All Ready Stock', 'description' => 'Browse products and accessories flagged for ready-stock review.'],
             'track-lighting' => ['title' => 'Track Lighting', 'description' => 'Track spotlights, wall washers and linear modules ready to ship.'],
-            'downlights' => ['title' => 'Downlights', 'description' => 'Fixed, adjustable and trimless downlights with current stock.'],
+            'downlights' => ['title' => 'Downlights', 'description' => 'Fixed, adjustable and trimless downlight candidates for inventory confirmation.'],
             'magnetic-system' => ['title' => 'Magnetic System', 'description' => 'Magnetic tracks, luminaires, drivers and connectors.'],
             'linear-lighting' => ['title' => 'Linear Lighting', 'description' => 'Linear fixtures for retail, office and hospitality projects.'],
             'accessories' => ['title' => 'Accessories', 'description' => 'Optics, reflectors, drivers, connectors and mounting accessories.'],
-            'new-arrival' => ['title' => 'New Arrival', 'description' => 'Recently stocked products and newly launched configurations.'],
-            'clearance' => ['title' => 'Clearance', 'description' => 'Limited quantities and special prices while stock lasts.'],
+            'new-arrival' => ['title' => 'New Arrival', 'description' => 'New-product and recently listed configuration candidates.'],
+            'clearance' => ['title' => 'Clearance', 'description' => 'Clearance candidates subject to quantity and price confirmation.'],
         ],
     ],
     'products' => [
@@ -142,6 +142,11 @@ return [
         'description' => 'Guided tools for finding products, estimating quantities and selecting compatible components.',
         'template' => 'ai',
         'items' => [
+            'lighting-simulation' => [
+                'title' => 'Lighting Simulation',
+                'path' => 'lighting-simulation',
+                'description' => 'Use product IES photometry to estimate direct illuminance, layout and uniformity.',
+            ],
             'product-finder' => ['title' => 'Product Finder'],
             'lighting-calculator' => ['title' => 'Lighting Calculator'],
             'beam-angle-selector' => ['title' => 'Beam Angle Selector'],

@@ -56,12 +56,14 @@ return [
                 ['code' => '10W', 'label' => '10W', 'sku' => '10W', 'default' => true],
                 ['code' => '15W', 'label' => '15W', 'sku' => '15W', 'price_delta' => 5],
                 ['code' => '20W', 'label' => '20W', 'sku' => '20W', 'price_delta' => 11],
+                ['code' => '40W', 'label' => '40W', 'sku' => '40W', 'price_delta' => 24],
             ]],
             ['code' => 'driver', 'label' => 'Driver', 'values' => [
                 ['code' => 'Lifud', 'label' => 'Lifud', 'sku' => 'LIF', 'default' => true],
                 ['code' => 'Tridonic', 'label' => 'Tridonic', 'sku' => 'TRI', 'price_delta' => 8],
             ]],
             ['code' => 'beam', 'label' => 'Beam Angle', 'values' => [
+                ['code' => '15', 'label' => '15°', 'sku' => '15D'],
                 ['code' => '24', 'label' => '24°', 'sku' => '24D', 'default' => true],
                 ['code' => '36', 'label' => '36°', 'sku' => '36D'],
                 ['code' => '60', 'label' => '60°', 'sku' => '60D'],

@@ -61,10 +61,10 @@ function product_card(array $p, bool $showStock = true, string $class = ''): str
                 <?php foreach (array_slice($p['features'], 0, 3) as $feature): ?><span><?= e($feature) ?></span><?php endforeach; ?>
             </div>
             <?php if ($showStock): ?>
-                <div class="stock-line"><span class="stock-dot <?= $stockClass ?>"></span><strong><?= number_format((int)$p['stock']) ?> pcs</strong><span>· <?= e($p['lead_time']) ?></span></div>
+                <div class="stock-line"><span class="stock-dot <?= $stockClass ?>"></span><strong><?= number_format((int)$p['stock']) ?> pcs</strong><span>· <?= catalog_is_demo() ? 'Demo inventory' : e($p['lead_time']) ?></span></div>
             <?php endif; ?>
             <div class="product-card-footer">
-                <div><span class="price-label">From</span><strong class="price">USD <?= number_format((float)$p['price'], 2) ?></strong></div>
+                <div><span class="price-label"><?= catalog_is_demo() ? 'Demo estimate' : 'From' ?></span><strong class="price">USD <?= number_format((float)$p['price'], 2) ?></strong></div>
                 <div class="product-card-buttons">
                     <button type="button" class="button button-outline button-icon" data-rfq-open data-product='<?= e(json_encode(['sku'=>$p['sku'],'name'=>$p['name'],'price'=>$p['price']], JSON_UNESCAPED_SLASHES)) ?>' aria-label="Add to RFQ"><?= icon('quote') ?></button>
                     <button type="button" class="button button-dark button-icon" data-quick-config-open data-product='<?= e(json_encode($cartPayload, JSON_UNESCAPED_SLASHES)) ?>' aria-label="Quick configure for Project Cart"><?= icon('cart') ?></button>

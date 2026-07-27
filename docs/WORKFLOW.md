@@ -18,9 +18,8 @@ Local changes -> GitHub version -> Server release
 
 ## Local Work Directory
 
-```text
-/Users/qiulei/Library/Mobile Documents/com~apple~CloudDocs/artdon/artdon-singapore
-```
+Use the active local Git clone for this task. Do not treat iCloud copies or
+production files as the editing source of truth.
 
 ## Server Work Directory
 

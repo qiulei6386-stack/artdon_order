@@ -5,6 +5,11 @@
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
   const basePath = (window.ARTDON && window.ARTDON.basePath) || '';
   const route = (path = '') => `${basePath}/${String(path).replace(/^\//, '')}`.replace(/\/$/, path ? '' : '/');
+  const imageRoute = value => {
+    const filename = String(value || 'downlight.svg').replace(/\\/g, '/').split('/').pop();
+    const safe = /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(filename) ? filename : 'downlight.svg';
+    return route(`assets/img/${encodeURIComponent(safe)}`);
+  };
   const storage = {
     get(key, fallback) {
       try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
@@ -25,7 +30,10 @@
     if (!region) return;
     const item = document.createElement('div');
     item.className = 'toast';
-    item.innerHTML = `${icons.check}<span>${message}</span>`;
+    item.innerHTML = icons.check;
+    const text = document.createElement('span');
+    text.textContent = String(message);
+    item.appendChild(text);
     region.appendChild(item);
     window.setTimeout(() => item.remove(), 3200);
   }
@@ -81,9 +89,9 @@
   $('[data-search-close]')?.addEventListener('click', closeSearch);
   searchPanel?.addEventListener('click', event => { if (event.target === searchPanel) closeSearch(); });
   const searchData = [
-    ['AL1010 Recessed Downlight', 'Product · Ready stock', 'product/AL1010'],
-    ['AT2020 Track Spotlight', 'Product · Best seller', 'product/AT2020'],
-    ['DALI-2 LED Driver', 'Product · High stock', 'product/DR7010'],
+    ['AL1010 Recessed Downlight', 'Product · Demo catalogue', 'product/AL1010'],
+    ['AT2020 Track Spotlight', 'Product · Demo catalogue', 'product/AT2020'],
+    ['DALI-2 LED Driver', 'Product · Demo catalogue', 'product/DR7010'],
     ['IES Files', 'Technical resource', 'resources/ies'],
     ['Retail Lighting Solutions', 'Application solution', 'solutions/retail'],
     ['Quick RFQ', 'Procurement service', 'procurement/quick-rfq']
@@ -208,7 +216,148 @@
   // Cart
   const CART_KEY = 'artdon_cart_v1';
   const getCart = () => storage.get(CART_KEY, []);
-  const saveCart = cart => { storage.set(CART_KEY, cart); updateCartCount(); };
+  const CART_API = route('api/cart.php');
+  let serverCartVersion = null;
+  let cartSyncTimer = null;
+  let cartSyncPromise = Promise.resolve();
+  let cartSyncWarningShown = false;
+  const cartIdempotencyKey = () => {
+    if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
+  };
+  const serverItemToLocal = (item, cached = null) => ({
+    item_id: Number(item.item_id),
+    product_id: item.product?.sku || '',
+    product_name: item.product?.name || '',
+    name: item.product?.name || '',
+    model: item.product?.sku || '',
+    series: item.product?.series || '',
+    image: item.product?.image || 'downlight.svg',
+    configured_model: item.configured_model || item.product?.sku || '',
+    sku: item.configured_model || item.product?.sku || '',
+    configuration: item.configuration || {},
+    configuration_text: Object.entries(item.configuration || {}).map(([key, value]) => `${key}: ${value}`).join(' · '),
+    quantity: Number(item.quantity || 1),
+    qty: Number(item.quantity || 1),
+    unit_price: item.unit_price === null ? null : Number(item.unit_price),
+    base_unit_price: item.unit_price === null ? null : Number(item.unit_price),
+    price: item.unit_price === null ? null : Number(item.unit_price),
+    price_mode: item.price_mode || 'review',
+    lead_time: item.lead_time || 'To be confirmed',
+    schema: cached?.schema || cached?.configuration_schema || null,
+    simulation: item.simulation || null,
+    simulation_project_id: item.simulation?.public_id || null,
+    customer_note: item.customer_note || '',
+    created_time: item.created_at || new Date().toISOString()
+  });
+  const localItemForServer = raw => {
+    const item = normalizeLegacyCartItem(raw);
+    return {
+      sku: item.model || raw.baseSku || raw.product_id || raw.sku,
+      configuration: item.configuration || {},
+      quantity: Number(item.quantity || 1),
+      customer_note: raw.customer_note || '',
+      simulation_project_id: raw.simulation_project_id || raw.simulation?.public_id || null
+    };
+  };
+  const applyServerCart = serverCart => {
+    serverCartVersion = Number(serverCart?.version || 1);
+    const cached = getCart();
+    const local = (serverCart?.items || []).map(item => {
+      const match = cached.find(raw => {
+        const normalized = normalizeLegacyCartItem(raw);
+        return normalized.model === item.product?.sku && normalized.configured_model === item.configured_model;
+      });
+      return serverItemToLocal(item, match || null);
+    });
+    storage.set(CART_KEY, local);
+    updateCartCount();
+    renderCart();
+    return local;
+  };
+  async function cartRequest(payload = null) {
+    const options = { headers: { Accept: 'application/json' }, credentials: 'same-origin' };
+    if (payload !== null) {
+      options.method = 'POST';
+      options.headers['Content-Type'] = 'application/json';
+      options.headers['X-CSRF-Token'] = window.ARTDON?.csrf || '';
+      options.headers['Idempotency-Key'] = cartIdempotencyKey();
+      options.body = JSON.stringify(payload);
+    }
+    const response = await fetch(CART_API, options);
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.success) {
+      const error = new Error(result.error?.message || result.message || 'Project Cart could not be synchronized.');
+      error.status = response.status;
+      error.code = result.error?.code || '';
+      throw error;
+    }
+    return result.data?.cart || null;
+  }
+  async function replaceServerCart(cart) {
+    const payload = {
+      action: 'replace',
+      items: cart.map(localItemForServer),
+      expected_version: serverCartVersion || undefined
+    };
+    try {
+      return applyServerCart(await cartRequest(payload));
+    } catch (error) {
+      if (error.status === 409) {
+        const current = await cartRequest();
+        applyServerCart(current);
+        const conflict = new Error('Project Cart changed in another tab. The latest saved cart is now shown; please review and repeat your change.');
+        conflict.status = 409;
+        conflict.code = 'cart_version_conflict';
+        throw conflict;
+      }
+      throw error;
+    }
+  }
+  const scheduleCartSync = cart => {
+    window.clearTimeout(cartSyncTimer);
+    cartSyncTimer = window.setTimeout(() => {
+      cartSyncPromise = cartSyncPromise
+        .catch(() => {})
+        .then(() => replaceServerCart(cart))
+        .then(() => { cartSyncWarningShown = false; })
+        .catch(error => {
+          if (!cartSyncWarningShown) {
+            toast(error.message || 'Project Cart is saved in this browser but server sync is pending.');
+            cartSyncWarningShown = true;
+          }
+        });
+    }, 180);
+  };
+  const saveCart = (cart, sync = true) => {
+    storage.set(CART_KEY, cart);
+    updateCartCount();
+    if (sync) scheduleCartSync(cart);
+  };
+  async function flushCartSync() {
+    window.clearTimeout(cartSyncTimer);
+    const cart = getCart();
+    cartSyncPromise = cartSyncPromise.catch(() => {}).then(() => replaceServerCart(cart));
+    return cartSyncPromise;
+  }
+  async function hydrateServerCart() {
+    const cached = getCart();
+    try {
+      const serverCart = await cartRequest();
+      serverCartVersion = Number(serverCart?.version || 1);
+      if ((serverCart?.items || []).length === 0 && cached.length > 0) {
+        await replaceServerCart(cached);
+      } else {
+        applyServerCart(serverCart);
+      }
+    } catch {
+      updateCartCount();
+      renderCart();
+    }
+  }
+  window.addEventListener('artdon-cart-server-update', event => {
+    if (event.detail?.cart) applyServerCart(event.detail.cart);
+  });
   const cartKey = item => `${item.product_id || item.baseSku || item.sku}|${item.configured_model || item.sku}|${JSON.stringify(item.configuration || item.configuration_text || '')}`;
   const getOptionDefault = option => option.values.find(value => value.default) || option.values[0] || {};
   const selectionFromSchema = (schema, overrides = {}) => Object.fromEntries((schema.options || []).map(option => [option.code, overrides[option.code] ?? getOptionDefault(option).code]));
@@ -217,6 +366,7 @@
   const ruleMatches = (rule, selected) => Object.entries(rule.when || {}).every(([code, value]) => selected[code] === value);
   const isDenied = (schema, selected, optionCode, valueCode) => (schema.rules || []).some(rule => rule.type === 'deny' && rule.option === optionCode && rule.value === valueCode && ruleMatches(rule, selected));
   const normalizeLegacyCartItem = item => ({
+    item_id: item.item_id ? Number(item.item_id) : null,
     product_id: item.product_id || item.baseSku || item.sku,
     product_name: item.product_name || item.name || '',
     model: item.model || item.baseSku || item.sku,
@@ -233,6 +383,9 @@
     price_mode: item.price_mode || 'fixed',
     lead_time: item.lead_time || 'To be confirmed',
     schema: item.schema || item.configuration_schema || null,
+    simulation: item.simulation || null,
+    simulation_project_id: item.simulation_project_id || item.simulation?.public_id || null,
+    customer_note: item.customer_note || '',
     created_time: item.created_time || new Date().toISOString()
   });
   function buildConfiguredSnapshot(product, selected, quantity) {
@@ -342,7 +495,7 @@
       return `<button type="button" data-quick-option="${escapeHtml(option.code)}" data-value="${escapeHtml(value.code)}" class="${active ? 'is-active' : ''}" ${disabled ? 'disabled' : ''}>${escapeHtml(value.label)}</button>`;
     }).join('')}</div></div>`).join('');
     const priceHtml = quickConfigSnapshot.price_mode === 'review' || quickConfigSnapshot.unit_price === null ? 'Price confirmed after review' : `${cartMoney(quickConfigSnapshot.unit_price)} / pcs`;
-    content.innerHTML = `<header class="quick-config-head"><img src="${route(`assets/img/${quickConfigProduct.image || 'downlight.svg'}`)}" alt=""><div><span>Quick Configuration</span><h2>${escapeHtml(quickConfigProduct.product_name || quickConfigProduct.name || '')}</h2><p>${escapeHtml(quickConfigProduct.model || quickConfigProduct.sku || '')} · ${escapeHtml(quickConfigProduct.series || '')} Series</p></div></header><div class="quick-config-scroll">${optionHtml}<div class="quick-config-field"><span>Quantity</span><div class="quick-qty"><button type="button" data-quick-qty-minus>${icons.minus}</button><input type="number" min="${Number(quickConfigProduct.moq || 1)}" value="${qty}" data-quick-config-qty><button type="button" data-quick-qty-plus>${icons.plus}</button></div><small>MOQ: ${Number(quickConfigProduct.moq || 1)} pcs</small></div>${notices.length ? `<p class="quick-config-rule-note">${escapeHtml([...new Set(notices)].join(' '))}</p>` : ''}</div><footer class="quick-config-foot"><div><span>Your Selection</span><strong data-quick-config-model>${escapeHtml(quickConfigSnapshot.configured_model)}</strong></div><div><span>Estimated Price</span><strong>${escapeHtml(priceHtml)}</strong></div><button type="button" class="button button-dark button-large button-block" data-quick-config-submit>${quickConfigEditIndex === null ? 'ADD TO PROJECT CART' : 'SAVE CHANGES'}</button></footer>`;
+    content.innerHTML = `<header class="quick-config-head"><img src="${imageRoute(quickConfigProduct.image)}" alt=""><div><span>Quick Configuration</span><h2>${escapeHtml(quickConfigProduct.product_name || quickConfigProduct.name || '')}</h2><p>${escapeHtml(quickConfigProduct.model || quickConfigProduct.sku || '')} · ${escapeHtml(quickConfigProduct.series || '')} Series</p></div></header><div class="quick-config-scroll">${optionHtml}<div class="quick-config-field"><span>Quantity</span><div class="quick-qty"><button type="button" data-quick-qty-minus>${icons.minus}</button><input type="number" min="${Number(quickConfigProduct.moq || 1)}" value="${qty}" data-quick-config-qty><button type="button" data-quick-qty-plus>${icons.plus}</button></div><small>MOQ: ${Number(quickConfigProduct.moq || 1)} pcs</small></div>${notices.length ? `<p class="quick-config-rule-note">${escapeHtml([...new Set(notices)].join(' '))}</p>` : ''}</div><footer class="quick-config-foot"><div><span>Your Selection</span><strong data-quick-config-model>${escapeHtml(quickConfigSnapshot.configured_model)}</strong></div><div><span>Estimated Price</span><strong>${escapeHtml(priceHtml)}</strong></div><button type="button" class="button button-dark button-large button-block" data-quick-config-submit>${quickConfigEditIndex === null ? 'ADD TO PROJECT CART' : 'SAVE CHANGES'}</button></footer>`;
     $$('[data-quick-option]', content).forEach(button => button.addEventListener('click', () => {
       if (button.disabled) return;
       quickConfigSelection[button.dataset.quickOption] = button.dataset.value;
@@ -423,81 +576,131 @@
   let configuredSelection = null;
   if (configurator) {
     const baseSku = configurator.dataset.baseSku || 'PRODUCT';
-    const basePrice = Number(configurator.dataset.basePrice || 0);
     const selects = $$('[data-config-option]', configurator);
     const skuTarget = $('[data-config-sku]', configurator);
-    const priceTarget = $('[data-config-price]', configurator);
+    const priceWrap = $('[data-config-price-wrap]', configurator);
     const qtyInput = $('[data-config-qty]', configurator);
     const ruleNote = $('[data-config-rule-note]', configurator);
-    const selectByName = name => selects.find(select => select.name === name);
-    const disableValue = (select, value) => {
-      if (!select) return;
-      Array.from(select.options).forEach(option => { if (option.value === value) option.disabled = true; });
-    };
-    const applyCombinationRules = () => {
-      selects.forEach(select => Array.from(select.options).forEach(option => { option.disabled = false; }));
-      const notices = [];
-      const powerSelect = selectByName('power');
-      const beamSelect = selectByName('beam_angle');
-      const driverSelect = selectByName('driver');
-      const dimmingSelect = selectByName('dimming');
-      const accessorySelect = selectByName('accessory');
+    const validationTarget = $('[data-config-validation]', configurator);
+    const addButton = $('[data-add-configured-cart]', configurator);
+    const simulateLink = $('[data-simulate-configured]', configurator);
+    let productPayload = {};
+    let validationSequence = 0;
+    let validationTimer = null;
+    try { productPayload = JSON.parse(configurator.dataset.product || '{}'); } catch {}
 
-      if (powerSelect?.value === '20W') {
-        disableValue(beamSelect, '15°');
-        if (beamSelect?.value === '15°') { beamSelect.value = '24°'; notices.push('20W starts from a 24° beam.'); }
+    const currentConfiguration = () => Object.fromEntries(selects.map(select => [select.name, select.value]));
+    const applyAvailability = availability => {
+      selects.forEach(select => Array.from(select.options).forEach(option => {
+        option.disabled = availability?.[select.name]?.[option.value] === false;
+      }));
+    };
+    const showRuleMessage = (message = '', isError = false) => {
+      if (!ruleNote) return;
+      ruleNote.hidden = !message;
+      ruleNote.textContent = message;
+      ruleNote.classList.toggle('is-error', isError);
+    };
+    const applyConfiguration = result => {
+      configuredSelection = result;
+      applyAvailability(result.availability || {});
+      if (skuTarget) skuTarget.textContent = result.configured_model;
+      if (priceWrap) {
+        priceWrap.innerHTML = result.unit_price === null || result.price_mode === 'review'
+          ? 'Commercial review'
+          : `${escapeHtml(result.currency || 'USD')} <b data-config-price>${Number(result.unit_price).toFixed(2)}</b>`;
       }
-      if (dimmingSelect?.value === 'DALI-2') {
-        disableValue(driverSelect, 'Lifud');
-        if (driverSelect?.value === 'Lifud') { driverSelect.value = 'Tridonic'; notices.push('DALI-2 requires a compatible driver.'); }
-      }
-      if (beamSelect?.value === '60°') {
-        disableValue(accessorySelect, 'Honeycomb');
-        if (accessorySelect?.value === 'Honeycomb') { accessorySelect.value = 'None'; notices.push('Honeycomb is unavailable with the 60° optic.'); }
-      }
-      if (ruleNote) {
-        ruleNote.hidden = notices.length === 0;
-        ruleNote.textContent = notices.join(' ');
+      if (validationTarget) validationTarget.textContent = `Validated · ${result.lead_time_text || 'Lead time to be confirmed'}`;
+      if (addButton) addButton.disabled = false;
+      showRuleMessage('');
+      if (simulateLink) {
+        const query = new URLSearchParams({
+          product: baseSku,
+          configuration: JSON.stringify(result.configuration || {})
+        });
+        simulateLink.href = `${route('lighting-simulation')}?${query.toString()}`;
       }
     };
-    const abbreviate = value => value.toUpperCase().replace(/\s*\/\s*/g, '').replace(/[^A-Z0-9°]/g, '').replace('RECESSED', 'REC').replace('SURFACE', 'SUR').replace('TRIDONIC', 'TRI').replace('PHILIPS', 'PHI').replace('LIFUD', 'LIF').replace('ONOFF', 'ON').replace('HONEYCOMB', 'HC').replace('ANTIGLARERING', 'AGR').slice(0, 8);
-    const updateConfiguration = () => {
-      applyCombinationRules();
-      const values = Object.fromEntries(selects.map(select => [select.name, select.value]));
-      const skuParts = [baseSku, values.power, values.cct, values.beam_angle, values.finish, values.dimming, values.accessory].map(abbreviate);
-      let price = basePrice;
-      const power = parseFloat(values.power || '0');
-      if (power > 10) price += (power - 10) * 1.15;
-      if (values.cri === 'Ra95') price += 4;
-      if (values.driver === 'Tridonic') price += 5;
-      if (values.dimming === '0–10V') price += 4;
-      if (values.dimming === 'DALI-2') price += 12;
-      if (values.accessory === 'Honeycomb') price += 5;
-      if (values.accessory === 'Anti-glare ring') price += 3;
-      const configuration = selects.map(select => `${select.closest('label')?.querySelector('span')?.textContent || select.name}: ${select.value}`).join(' · ');
-      configuredSelection = {
-        sku: baseSku,
-        configuredSku: skuParts.join('-'),
-        configuration,
-        price: Number(price.toFixed(2)),
-        qty: Number(qtyInput?.value || 1)
-      };
-      if (skuTarget) skuTarget.textContent = configuredSelection.configuredSku;
-      if (priceTarget) priceTarget.textContent = configuredSelection.price.toFixed(2);
+    const validateConfiguration = async () => {
+      const sequence = ++validationSequence;
+      if (addButton) addButton.disabled = true;
+      if (validationTarget) validationTarget.textContent = 'Validating selection…';
+      try {
+        const response = await fetch(route('api/configure.php'), {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': window.ARTDON?.csrf || ''
+          },
+          body: JSON.stringify({
+            sku: baseSku,
+            configuration: currentConfiguration(),
+            quantity: Number(qtyInput?.value || 1)
+          })
+        });
+        const payload = await response.json();
+        if (sequence !== validationSequence) return;
+        const result = payload.data?.configuration;
+        if (!response.ok || !payload.success || !result?.valid) {
+          if (result?.availability) applyAvailability(result.availability);
+          throw new Error(payload.message || result?.message || 'This combination is not available.');
+        }
+        applyConfiguration(result);
+      } catch (error) {
+        if (sequence !== validationSequence) return;
+        configuredSelection = null;
+        if (validationTarget) validationTarget.textContent = 'Selection requires correction';
+        showRuleMessage(error.message || 'Unable to validate this combination.', true);
+      }
     };
-    selects.forEach(select => select.addEventListener('change', updateConfiguration));
-    qtyInput?.addEventListener('input', updateConfiguration);
-    $('[data-qty-minus]', configurator)?.addEventListener('click', () => { if (qtyInput) { qtyInput.value = String(Math.max(1, Number(qtyInput.value || 1) - 1)); updateConfiguration(); } });
-    $('[data-qty-plus]', configurator)?.addEventListener('click', () => { if (qtyInput) { qtyInput.value = String(Number(qtyInput.value || 1) + 1); updateConfiguration(); } });
-    $('[data-reset-config]', configurator)?.addEventListener('click', () => { selects.forEach(select => select.selectedIndex = 0); if (qtyInput) qtyInput.value = qtyInput.min || '1'; updateConfiguration(); });
-    $('[data-add-configured-cart]', configurator)?.addEventListener('click', event => {
-      const button = event.currentTarget;
-      let base = {};
-      try { base = JSON.parse(button.dataset.product || '{}'); } catch {}
-      updateConfiguration();
-      addToCart({ ...base, sku: configuredSelection.configuredSku, baseSku, configuration: configuredSelection.configuration, price: configuredSelection.price, qty: configuredSelection.qty });
+    const queueValidation = () => {
+      window.clearTimeout(validationTimer);
+      validationTimer = window.setTimeout(validateConfiguration, 90);
+    };
+
+    selects.forEach(select => select.addEventListener('change', queueValidation));
+    qtyInput?.addEventListener('input', queueValidation);
+    $('[data-qty-minus]', configurator)?.addEventListener('click', () => {
+      if (!qtyInput) return;
+      qtyInput.value = String(Math.max(Number(qtyInput.min || 1), Number(qtyInput.value || 1) - 1));
+      queueValidation();
     });
-    updateConfiguration();
+    $('[data-qty-plus]', configurator)?.addEventListener('click', () => {
+      if (!qtyInput) return;
+      qtyInput.value = String(Math.min(Number(qtyInput.max || 100000), Number(qtyInput.value || 1) + 1));
+      queueValidation();
+    });
+    $('[data-reset-config]', configurator)?.addEventListener('click', () => {
+      const schema = productPayload.configuration_schema || {};
+      (schema.options || []).forEach(option => {
+        const select = selects.find(item => item.name === option.code);
+        const defaultValue = option.values?.find(value => value.default) || option.values?.[0];
+        if (select && defaultValue) select.value = defaultValue.code;
+      });
+      if (qtyInput) qtyInput.value = qtyInput.min || '1';
+      queueValidation();
+    });
+    addButton?.addEventListener('click', () => {
+      if (!configuredSelection) return toast('Correct the product configuration first');
+      addToProjectCart({
+        ...productPayload,
+        product_id: baseSku,
+        model: baseSku,
+        configured_model: configuredSelection.configured_model,
+        sku: configuredSelection.configured_model,
+        configuration: configuredSelection.configuration,
+        configuration_text: configuredSelection.configuration_text,
+        quantity: configuredSelection.quantity,
+        qty: configuredSelection.quantity,
+        unit_price: configuredSelection.unit_price,
+        price: configuredSelection.unit_price,
+        price_mode: configuredSelection.price_mode,
+        lead_time: configuredSelection.lead_time_text,
+        schema: configuredSelection.schema || productPayload.configuration_schema
+      });
+    });
+    validateConfiguration();
   }
 
   function cartMoney(value) { return `USD ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
@@ -506,17 +709,21 @@
     if (!container) return;
     const cart = getCart();
     const checkoutButton = $('[data-cart-checkout]');
+    const exportButton = $('[data-cart-export]');
     if (!cart.length) {
       container.innerHTML = `<div class="empty-cart"><div>${icons.cart}</div><h2>Your Project Cart is empty</h2><p>Add configured ready-stock or product items, then submit one consolidated project request.</p><a class="button button-dark" href="${route('ready-stock')}">Browse ready stock</a></div>`;
       if (checkoutButton) checkoutButton.disabled = true;
+      if (exportButton) exportButton.disabled = true;
     } else {
       container.innerHTML = `<div class="project-cart-table"><div class="project-cart-head"><span>Product</span><span>Configuration</span><span>Quantity</span><span>Price</span><span>Lead Time</span><span>Action</span></div>${cart.map((rawItem, index) => {
         const item = normalizeLegacyCartItem(rawItem);
         const price = item.price_mode === 'review' || item.unit_price === null ? 'Review' : cartMoney(item.unit_price);
         const configHtml = item.configuration && Object.keys(item.configuration).length && item.schema ? (item.schema.options || []).map(option => `<span>${escapeHtml(displayValue(item.schema, option.code, item.configuration))}</span>`).join('') : `<span>${escapeHtml(item.configuration_text)}</span>`;
-        return `<div class="project-cart-row" data-cart-row="${index}"><div class="project-cart-product"><img src="${route(`assets/img/${item.image || 'downlight.svg'}`)}" alt=""><span><strong>${escapeHtml(item.model || item.sku)}</strong><small>${escapeHtml(item.product_name || '')}</small><small>${escapeHtml(item.configured_model || item.sku)}</small></span></div><div class="project-cart-config">${configHtml}</div><div class="cart-row-qty"><button type="button" data-cart-minus="${index}">${icons.minus}</button><input aria-label="Quantity" type="number" min="1" value="${Number(item.quantity || 1)}" data-cart-qty="${index}"><button type="button" data-cart-plus="${index}">${icons.plus}</button></div><div class="cart-row-price">${escapeHtml(price)}</div><div class="project-cart-lead">${escapeHtml(item.lead_time)}</div><div class="project-cart-actions"><button type="button" data-cart-edit="${index}">Edit</button><button type="button" data-cart-remove="${index}">Delete</button></div></div>`;
+        const simulationHtml = item.simulation ? `<span class="cart-simulation-tag">IES · ${escapeHtml(String(item.simulation.average_lux ?? '—'))} lx avg</span>${item.simulation.report_url ? `<a href="${escapeHtml(route(item.simulation.report_url))}" target="_blank" rel="noopener">PDF report</a>` : ''}` : '';
+        return `<div class="project-cart-row" data-cart-row="${index}"><div class="project-cart-product"><img src="${imageRoute(item.image)}" alt=""><span><strong>${escapeHtml(item.model || item.sku)}</strong><small>${escapeHtml(item.product_name || '')}</small><small>${escapeHtml(item.configured_model || item.sku)}</small></span></div><div class="project-cart-config">${configHtml}${simulationHtml}</div><div class="cart-row-qty"><button type="button" data-cart-minus="${index}">${icons.minus}</button><input aria-label="Quantity" type="number" min="1" value="${Number(item.quantity || 1)}" data-cart-qty="${index}"><button type="button" data-cart-plus="${index}">${icons.plus}</button></div><div class="cart-row-price">${escapeHtml(price)}</div><div class="project-cart-lead">${escapeHtml(item.lead_time)}</div><div class="project-cart-actions"><button type="button" data-cart-edit="${index}">Edit</button><button type="button" data-cart-duplicate="${index}">Duplicate</button><button type="button" data-cart-remove="${index}">Delete</button></div></div>`;
       }).join('')}</div>`;
       if (checkoutButton) checkoutButton.disabled = false;
+      if (exportButton) exportButton.disabled = false;
     }
     const normalizedCart = cart.map(normalizeLegacyCartItem);
     const itemCount = normalizedCart.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
@@ -530,6 +737,7 @@
     $$('[data-cart-plus]').forEach(button => button.addEventListener('click', () => changeCartQty(Number(button.dataset.cartPlus), 1)));
     $$('[data-cart-qty]').forEach(input => input.addEventListener('change', () => setCartQty(Number(input.dataset.cartQty), Number(input.value))));
     $$('[data-cart-remove]').forEach(button => button.addEventListener('click', () => removeCartItem(Number(button.dataset.cartRemove))));
+    $$('[data-cart-duplicate]').forEach(button => button.addEventListener('click', () => duplicateCartItem(Number(button.dataset.cartDuplicate))));
     $$('[data-cart-edit]').forEach(button => button.addEventListener('click', () => {
       const index = Number(button.dataset.cartEdit);
       const item = normalizeLegacyCartItem(getCart()[index] || {});
@@ -569,6 +777,15 @@
     renderCart();
     if (removed) toast(`${removed.configured_model || removed.sku} removed from Project Cart`);
   }
+  function duplicateCartItem(index) {
+    const cart = getCart();
+    if (!cart[index]) return;
+    const duplicate = { ...cart[index], item_id: null, created_time: new Date().toISOString() };
+    cart.splice(index + 1, 0, duplicate);
+    saveCart(cart);
+    renderCart();
+    toast(`${duplicate.configured_model || duplicate.sku} duplicated`);
+  }
   $('[data-cart-checkout]')?.addEventListener('click', () => {
     const formWrap = $('[data-checkout-form]');
     if (formWrap) { formWrap.hidden = false; formWrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
@@ -578,8 +795,42 @@
     if (formWrap) formWrap.hidden = true;
     $('[data-cart-items]')?.scrollIntoView({ behavior: 'smooth' });
   });
+  $('[data-cart-export]')?.addEventListener('click', () => {
+    const safeCell = value => {
+      let text = String(value ?? '').replace(/\r?\n/g, ' ');
+      if (/^[=+\-@]/.test(text)) text = `'${text}`;
+      return `"${text.replace(/"/g, '""')}"`;
+    };
+    const headers = ['Product SKU', 'Product', 'Configured Model', 'Configuration', 'Quantity', 'Unit Price', 'Currency', 'Lead Time', 'Simulation', 'Report'];
+    const rows = getCart().map(raw => {
+      const item = normalizeLegacyCartItem(raw);
+      const configuration = Object.entries(item.configuration || {}).map(([key, value]) => `${key}: ${value}`).join(' | ') || item.configuration_text;
+      return [
+        item.model,
+        item.product_name,
+        item.configured_model,
+        configuration,
+        item.quantity,
+        item.unit_price === null ? 'Review' : Number(item.unit_price).toFixed(2),
+        'USD',
+        item.lead_time,
+        item.simulation?.public_id || '',
+        item.simulation?.report_url ? route(item.simulation.report_url) : ''
+      ];
+    });
+    const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(safeCell).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `artdon-project-cart-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  });
   updateCartCount();
   renderCart();
+  hydrateServerCart();
 
   // Tabs
   $$('[data-tabs]').forEach(tabset => {
@@ -626,6 +877,11 @@
       if (submit) { submit.disabled = true; submit.dataset.originalText = submit.textContent; submit.textContent = 'Submitting…'; }
       if (status) { status.className = 'form-status'; status.textContent = ''; }
       try {
+        if (form.hasAttribute('data-cart-order-form')) {
+          await flushCartSync();
+          const cartJson = $('[data-cart-json]', form);
+          if (cartJson) cartJson.value = JSON.stringify(getCart().map(normalizeLegacyCartItem));
+        }
         const response = await fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'X-Requested-With': 'XMLHttpRequest' } });
         const result = await response.json();
         if (!response.ok || !result.success) throw new Error(result.message || 'Submission failed.');

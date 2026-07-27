@@ -15,14 +15,16 @@ $currentSection = $page['section'] ?? '';
     <?php if (in_array($currentSection, ['account','cart','configure'], true)): ?><meta name="robots" content="noindex,follow"><?php endif; ?>
     <meta name="theme-color" content="#0a0a0a">
     <link rel="icon" href="<?= asset('img/favicon.svg') ?>" type="image/svg+xml">
-    <link rel="stylesheet" href="<?= asset('css/app.css') ?>?v=1.0.0">
+    <link rel="stylesheet" href="<?= asset('css/app.css') ?>?v=<?= e((string) filemtime(__DIR__ . '/../assets/css/app.css')) ?>">
     <script>window.ARTDON={basePath:<?= json_encode(base_path(), JSON_UNESCAPED_SLASHES) ?>,csrf:<?= json_encode(csrf_token()) ?>};</script>
 </head>
 <body data-page="<?= e($currentSection) ?>">
 <a class="skip-link" href="#main">Skip to content</a>
 <div class="utility-bar">
     <div class="container utility-inner">
-        <div class="utility-message"><span class="live-dot"></span> Live inventory · Configurable products · Global delivery</div>
+        <div class="utility-message"><span class="live-dot"></span><?= catalog_is_demo()
+            ? 'Catalog preview · Demo price and inventory · Confirm by RFQ'
+            : 'Live inventory · Configurable products · Global delivery' ?></div>
         <div class="utility-links">
             <a href="<?= url('procurement/quick-rfq') ?>">Quick RFQ</a>
             <a href="<?= url('procurement/sample-order') ?>">Sample Order</a>

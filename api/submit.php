@@ -3,188 +3,164 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../includes/bootstrap.php';
+require_once __DIR__ . '/../includes/api.php';
+require_once __DIR__ . '/../includes/database.php';
+require_once __DIR__ . '/../includes/cart.php';
+require_once __DIR__ . '/../includes/procurement.php';
 
-header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: no-store');
-http_response_code(200);
+$requestId = api_request_id();
 
-function clip_text(string $value, int $max): string
+/**
+ * Keep the original form response contract while adding a stable error code.
+ *
+ * @param array<string,mixed> $payload
+ */
+function procurement_api_respond(int $status, array $payload): never
 {
-    if (function_exists('mb_substr')) {
-        return mb_substr($value, 0, $max, 'UTF-8');
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
     }
-    if (function_exists('iconv_substr')) {
-        $clipped = iconv_substr($value, 0, $max, 'UTF-8');
-        if ($clipped !== false) return $clipped;
-    }
-    $clipped = substr($value, 0, $max);
-    while ($clipped !== '' && preg_match('//u', $clipped) !== 1) {
-        $clipped = substr($clipped, 0, -1);
-    }
-    return $clipped;
-}
-
-function respond(int $status, array $payload): never
-{
     http_response_code($status);
-    echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    echo json_encode(
+        $payload,
+        JSON_UNESCAPED_SLASHES
+        | JSON_UNESCAPED_UNICODE
+        | JSON_INVALID_UTF8_SUBSTITUTE
+    );
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    respond(405, ['success' => false, 'message' => 'POST requests only.']);
-}
-
-if (!hash_equals((string) ($_SESSION['csrf_token'] ?? ''), (string) ($_POST['csrf_token'] ?? ''))) {
-    respond(419, ['success' => false, 'message' => 'The form session expired. Refresh the page and try again.']);
-}
-
-$submissionToken = preg_replace('/[^a-f0-9]/i', '', (string) ($_POST['submission_token'] ?? ''));
-if (strlen($submissionToken) !== 40) {
-    respond(422, ['success' => false, 'message' => 'The submission token is invalid. Refresh the page and try again.']);
-}
-$usedTokens = (array) ($_SESSION['used_submission_tokens'] ?? []);
-if (isset($usedTokens[$submissionToken])) {
-    respond(200, [
-        'success' => true,
-        'duplicate' => true,
-        'message' => 'This request was already recorded.',
-        'reference' => (string) $usedTokens[$submissionToken],
-        'next_submission_token' => bin2hex(random_bytes(20)),
+if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST') {
+    if (!headers_sent()) {
+        header('Allow: POST');
+    }
+    procurement_api_respond(405, [
+        'success' => false,
+        'message' => 'POST requests only.',
+        'error' => ['code' => 'method_not_allowed'],
+        'request_id' => $requestId,
     ]);
 }
 
-if (trim((string) ($_POST['website'] ?? '')) !== '') {
-    respond(200, ['success' => true, 'message' => 'Request received.', 'reference' => 'OK']);
-}
+api_rate_limit('procurement-submit', 20, 3600);
 
-$now = time();
-$recent = array_values(array_filter((array) ($_SESSION['submission_times'] ?? []), static fn ($timestamp): bool => $now - (int) $timestamp < 60));
-if (count($recent) >= 5) {
-    respond(429, ['success' => false, 'message' => 'Too many requests. Please retry shortly.']);
-}
-$recent[] = $now;
-$_SESSION['submission_times'] = $recent;
+try {
+    artdon_procurement_verify_csrf((string) ($_POST['csrf_token'] ?? ''));
 
-$clean = static function (string $key, int $max = 5000): string {
-    $value = trim((string) ($_POST[$key] ?? ''));
-    $value = preg_replace('/\R/u', "\n", $value) ?? $value;
-    return clip_text($value, $max);
-};
-
-$formType = preg_replace('/[^a-z0-9_-]/i', '', $clean('form_type', 60)) ?: 'request';
-$company = $clean('company', 180);
-$name = $clean('name', 120);
-$email = $clean('email', 180);
-$country = $clean('country', 120);
-
-$errors = [];
-if ($company === '') $errors[] = 'Company is required.';
-if ($name === '') $errors[] = 'Contact name is required.';
-if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'A valid email is required.';
-if ($country === '') $errors[] = 'Country or region is required.';
-if ($errors) respond(422, ['success' => false, 'message' => implode(' ', $errors)]);
-
-$prefixMap = [
-    'order_request' => 'WO', 'quick_rfq' => 'RFQ', 'quick-rfq' => 'RFQ',
-    'sample-order' => 'SMP', 'project-package' => 'PRJ', 'bulk-order' => 'BLK',
-    'ready-stock' => 'RST', 'procurement-service' => 'SRV',
-    'oem' => 'OEM', 'odm' => 'ODM', 'contact' => 'MSG',
-];
-$prefix = $prefixMap[$formType] ?? 'REQ';
-$reference = sprintf('%s-%s-%s', $prefix, date('Ymd-His'), strtoupper(bin2hex(random_bytes(2))));
-
-$allowedExtensions = ['pdf','xls','xlsx','csv','doc','docx','dwg','dxf','zip','jpg','jpeg','png','webp','ies','ldt'];
-$uploadRecords = [];
-$files = $_FILES['attachments'] ?? null;
-if ($files && is_array($files['name'] ?? null)) {
-    $uploadDir = __DIR__ . '/../storage/uploads/' . date('Y/m');
-    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0750, true) && !is_dir($uploadDir)) {
-        respond(500, ['success' => false, 'message' => 'Upload storage is not available.']);
+    if (trim((string) ($_POST['website'] ?? '')) !== '') {
+        procurement_api_respond(200, [
+            'success' => true,
+            'message' => 'Request received.',
+            'reference' => 'OK',
+            'next_submission_token' => bin2hex(random_bytes(20)),
+            'request_id' => $requestId,
+        ]);
     }
-    foreach ($files['name'] as $index => $originalName) {
-        $error = (int) ($files['error'][$index] ?? UPLOAD_ERR_NO_FILE);
-        if ($error === UPLOAD_ERR_NO_FILE) continue;
-        if ($error !== UPLOAD_ERR_OK) respond(422, ['success' => false, 'message' => 'One of the uploaded files could not be received.']);
-        $size = (int) ($files['size'][$index] ?? 0);
-        if ($size <= 0 || $size > 10 * 1024 * 1024) respond(422, ['success' => false, 'message' => 'Each file must be between 1 byte and 10 MB.']);
-        $extension = strtolower(pathinfo((string) $originalName, PATHINFO_EXTENSION));
-        if (!in_array($extension, $allowedExtensions, true)) respond(422, ['success' => false, 'message' => 'Unsupported attachment type: ' . $extension]);
-        $tmpName = (string) ($files['tmp_name'][$index] ?? '');
-        $head = is_file($tmpName) ? (string) file_get_contents($tmpName, false, null, 0, 4096) : '';
-        if ($head !== '' && preg_match('/<\?(?:php|=)/i', $head)) {
-            respond(422, ['success' => false, 'message' => 'Executable content is not permitted in attachments.']);
-        }
-        if (function_exists('finfo_open')) {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mime = $finfo ? (string) finfo_file($finfo, $tmpName) : '';
-            if ($finfo) finfo_close($finfo);
-            $blockedMimes = ['text/x-php','application/x-httpd-php','application/x-executable','application/x-dosexec','application/x-sharedlib'];
-            if (in_array(strtolower($mime), $blockedMimes, true)) {
-                respond(422, ['success' => false, 'message' => 'Executable files are not permitted.']);
-            }
-        }
-        $storedName = $reference . '-' . str_pad((string) ($index + 1), 2, '0', STR_PAD_LEFT) . '-' . bin2hex(random_bytes(4)) . '.' . $extension;
-        $target = $uploadDir . '/' . $storedName;
-        if (!move_uploaded_file((string) $files['tmp_name'][$index], $target)) respond(500, ['success' => false, 'message' => 'An attachment could not be stored.']);
-        chmod($target, 0640);
-        $uploadRecords[] = ['original_name' => clip_text(basename((string) $originalName), 220), 'stored_name' => $storedName, 'size' => $size, 'extension' => $extension];
+
+    $now = time();
+    $recent = array_values(array_filter(
+        (array) ($_SESSION['submission_times'] ?? []),
+        static fn(mixed $timestamp): bool => $now - (int) $timestamp < 60
+    ));
+    if (count($recent) >= 5) {
+        procurement_api_respond(429, [
+            'success' => false,
+            'message' => 'Too many requests. Please retry shortly.',
+            'error' => ['code' => 'rate_limited'],
+            'request_id' => $requestId,
+        ]);
     }
+    $recent[] = $now;
+    $_SESSION['submission_times'] = $recent;
+
+    $pdo = artdon_db_open_ready();
+    $result = artdon_procurement_submit(
+        $_POST,
+        is_array($_FILES['attachments'] ?? null) ? $_FILES['attachments'] : [],
+        api_session_hash(),
+        $pdo,
+        [
+            'request_id' => $requestId,
+            'remote_addr' => (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
+            'user_agent' => (string) ($_SERVER['HTTP_USER_AGENT'] ?? ''),
+            'referer' => (string) ($_SERVER['HTTP_REFERER'] ?? ''),
+        ]
+    );
+
+    $_SESSION['used_submission_tokens'][(string) ($_POST['submission_token'] ?? '')] = $result['reference'];
+    if (count((array) $_SESSION['used_submission_tokens']) > 50) {
+        $_SESSION['used_submission_tokens'] = array_slice(
+            (array) $_SESSION['used_submission_tokens'],
+            -50,
+            null,
+            true
+        );
+    }
+
+    if (($site['enable_mail'] ?? false) === true && empty($result['duplicate'])) {
+        $safeCompany = str_replace(["\r", "\n"], ' ', (string) ($_POST['company'] ?? ''));
+        $safeEmail = str_replace(["\r", "\n"], '', (string) ($_POST['email'] ?? ''));
+        $subject = sprintf('[%s] Procurement request from %s', $result['reference'], $safeCompany);
+        $body = sprintf(
+            "Reference: %s\nType: %s\nCompany: %s\nName: %s\nEmail: %s\nCountry: %s\n",
+            $result['reference'],
+            $result['request_type'],
+            $safeCompany,
+            (string) ($_POST['name'] ?? ''),
+            $safeEmail,
+            (string) ($_POST['country'] ?? '')
+        );
+        $headers = [
+            'From: ' . $site['order_email'],
+            'Reply-To: ' . $safeEmail,
+            'Content-Type: text/plain; charset=UTF-8',
+        ];
+        @mail((string) $site['order_email'], $subject, $body, implode("\r\n", $headers));
+    }
+
+    procurement_api_respond(200, array_merge($result, [
+        'next_submission_token' => bin2hex(random_bytes(20)),
+        'request_id' => $requestId,
+    ]));
+} catch (ArtdonProcurementException $error) {
+    procurement_api_respond($error->httpStatus, [
+        'success' => false,
+        'message' => $error->getMessage(),
+        'error' => [
+            'code' => $error->errorCode,
+            'details' => $error->details,
+        ],
+        'request_id' => $requestId,
+    ]);
+} catch (ArtdonDatabaseUnavailable $error) {
+    error_log(sprintf('[procurement:%s] Database is not ready: %s', $requestId, $error->getMessage()));
+    if (!headers_sent()) {
+        header('Retry-After: 5');
+    }
+    procurement_api_respond(503, [
+        'success' => false,
+        'message' => 'Request storage is temporarily unavailable. Please try again.',
+        'error' => ['code' => 'request_storage_unavailable'],
+        'request_id' => $requestId,
+    ]);
+} catch (PDOException $error) {
+    error_log(sprintf('[procurement:%s] Database error: %s', $requestId, $error->getMessage()));
+    if (!headers_sent()) {
+        header('Retry-After: 2');
+    }
+    procurement_api_respond(503, [
+        'success' => false,
+        'message' => 'Request storage is temporarily unavailable. Please try again.',
+        'error' => ['code' => 'request_storage_unavailable'],
+        'request_id' => $requestId,
+    ]);
+} catch (Throwable $error) {
+    error_log(sprintf('[procurement:%s] Unexpected error: %s', $requestId, $error->getMessage()));
+    procurement_api_respond(500, [
+        'success' => false,
+        'message' => 'The request could not be recorded.',
+        'error' => ['code' => 'request_error'],
+        'request_id' => $requestId,
+    ]);
 }
-
-$fields = [];
-foreach ($_POST as $key => $value) {
-    if (in_array($key, ['csrf_token','submission_token','website'], true) || is_array($value)) continue;
-    $safeKey = preg_replace('/[^a-z0-9_-]/i', '', (string) $key);
-    if ($safeKey === '') continue;
-    $fields[$safeKey] = clip_text(trim((string) $value), $safeKey === 'cart_json' ? 50000 : 5000);
-}
-
-$record = [
-    'reference' => $reference,
-    'created_at' => date(DATE_ATOM),
-    'form_type' => $formType,
-    'company' => $company,
-    'name' => $name,
-    'email' => strtolower($email),
-    'country' => $country,
-    'fields' => $fields,
-    'attachments' => $uploadRecords,
-    'request' => [
-        'ip_hash' => hash('sha256', (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown')),
-        'user_agent' => clip_text((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 500),
-        'referer' => clip_text((string) ($_SERVER['HTTP_REFERER'] ?? ''), 500),
-    ],
-];
-
-$logFile = __DIR__ . '/../storage/submissions.jsonl';
-$line = json_encode($record, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) . PHP_EOL;
-if (file_put_contents($logFile, $line, FILE_APPEND | LOCK_EX) === false) {
-    respond(500, ['success' => false, 'message' => 'The request could not be recorded.']);
-}
-@chmod($logFile, 0640);
-
-$usedTokens[$submissionToken] = $reference;
-if (count($usedTokens) > 50) {
-    $usedTokens = array_slice($usedTokens, -50, null, true);
-}
-$_SESSION['used_submission_tokens'] = $usedTokens;
-
-if (($site['enable_mail'] ?? false) === true) {
-    $safeCompany = str_replace(["\r", "\n"], ' ', $company);
-    $subject = sprintf('[%s] %s from %s', $reference, strtoupper(str_replace(['_','-'], ' ', $formType)), $safeCompany);
-    $body = "Reference: {$reference}\nType: {$formType}\nCompany: {$company}\nName: {$name}\nEmail: {$email}\nCountry: {$country}\n\n" . print_r($fields, true);
-    $headers = [
-        'From: ' . $site['order_email'],
-        'Reply-To: ' . str_replace(["\r", "\n"], '', $email),
-        'Content-Type: text/plain; charset=UTF-8',
-    ];
-    @mail((string) $site['order_email'], $subject, $body, implode("\r\n", $headers));
-}
-
-respond(200, [
-    'success' => true,
-    'message' => 'Your request has been recorded for review.',
-    'reference' => $reference,
-    'next_submission_token' => bin2hex(random_bytes(20)),
-]);

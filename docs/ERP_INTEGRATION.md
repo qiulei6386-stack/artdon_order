@@ -103,11 +103,44 @@ POST /webhooks/v1/shipment-updated
 
 重试建议：1 分钟、5 分钟、15 分钟、1 小时、6 小时、24 小时。
 
+### 当前出站 Worker
+
+`tools/sync_worker.php` 会从 `sync_jobs` 安全领取到期任务，发送后退出，不会常驻或无限等待。
+
+```bash
+ERP_API_URL="https://erp.example.com/integration/v1/procurement-requests" \
+ERP_API_TOKEN="replace-with-secret" \
+php tools/sync_worker.php --once --limit=10
+```
+
+- 未配置 URL 或令牌时，Worker 在领取任务前失败，队列与重试次数保持不变。
+- 生产环境只接受 HTTPS；仅明确设置为测试 / 开发环境的 localhost 可使用 HTTP。
+- 每次请求使用 Bearer 令牌、`Idempotency-Key`、UTC 时间戳及 HMAC-SHA256 签名。
+- 队列保存不可变的完整请求快照：公司/联系人、项目字段、服务端购物车产品与配置、
+  数量/价格审核状态、模拟结果、报告元数据和附件元数据。
+- 连接和总请求时间有上限，不跟随重定向，响应体大小也受限。
+- 网络错误、408、425、429 和 5xx 使用指数退避重试；其他 4xx 直接进入 `dead`。
+- 广州端的 2xx 响应必须是 JSON，并明确返回同一个幂等键及远端记录 ID：
+
+```json
+{
+  "success": true,
+  "idempotency_key": "request_push:PR-...",
+  "remote_id": "ERP-..."
+}
+```
+
+  空响应、非 JSON、错误幂等键或缺少 `remote_id` 都不会标记成功，而会进入重试。
+- 每次领取都会增加一次尝试次数；崩溃锁超时后可由下一 Worker 安全接管。
+- 只有广州接口、字段映射与上述确认契约联合验收后，才可添加 cron。远端必须让同一
+  幂等键（包括重放）返回相同的成功确认。
+
 ## 安全
 
 - 双方只开放 HTTPS API。
 - 使用 HMAC 签名、时间戳和重放窗口。
 - 每个请求带唯一幂等键。
 - API 凭证按环境分开，定期轮换。
-- 附件使用临时授权下载链接，不在接口里传公开永久地址。
+- 附件上传后先处于 `quarantined`；完成恶意文件扫描或人工安全放行后，才允许通过
+  临时授权方式传输。接口不发送本地路径或公开永久地址。
 - 记录请求、响应、耗时、结果和错误，但日志不保存明文密码或敏感支付信息。

@@ -85,5 +85,8 @@
     </div>
 </div>
 <script src="<?= asset('js/app.js') ?>?v=<?= e((string) filemtime(__DIR__ . '/../assets/js/app.js')) ?>" defer></script>
+<?php if (($page['section'] ?? '') === 'lighting-simulation'): ?>
+<script src="<?= asset('js/lighting-simulation.js') ?>?v=<?= e((string) filemtime(__DIR__ . '/../assets/js/lighting-simulation.js')) ?>" defer></script>
+<?php endif; ?>
 </body>
 </html>

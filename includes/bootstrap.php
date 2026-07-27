@@ -17,6 +17,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 if (!headers_sent()) {
+    header('Cache-Control: private, no-store');
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: strict-origin-when-cross-origin');
     header('X-Frame-Options: SAMEORIGIN');
@@ -28,10 +29,41 @@ $sections = require __DIR__ . '/../config/content.php';
 $products = require __DIR__ . '/../config/products.php';
 $productConfigurations = require __DIR__ . '/../config/product_configuration.php';
 require_once __DIR__ . '/components.php';
+require_once __DIR__ . '/database.php';
+
+/*
+ * The checked-in PHP catalog remains an emergency read-only fallback. The
+ * deployed application is migrated before release and then reads the same
+ * product/configuration records from SQLite, which is also the authority for
+ * carts, requests, IES profiles and simulations.
+ */
+$databaseAvailable = false;
+try {
+    if (is_file(artdon_database_path())) {
+        $databaseProducts = artdon_catalog_all();
+        if ($databaseProducts !== []) {
+            $products = $databaseProducts;
+            $databaseAvailable = true;
+        }
+    }
+} catch (Throwable $databaseError) {
+    error_log('Artdon database fallback: ' . $databaseError->getMessage());
+}
+$catalogIsDemo = !$databaseAvailable || array_filter(
+    $products,
+    static fn(array $catalogProduct): bool =>
+        ($catalogProduct['source_system'] ?? 'demo_config') === 'demo_config'
+) !== [];
 
 function e(mixed $value): string
 {
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function catalog_is_demo(): bool
+{
+    global $catalogIsDemo;
+    return (bool) $catalogIsDemo;
 }
 
 function base_path(): string
@@ -52,7 +84,20 @@ function url(string $path = ''): string
 
 function asset(string $path): string
 {
-    return url('assets/' . ltrim($path, '/'));
+    $path = trim(str_replace('\\', '/', $path), '/');
+    $segments = explode('/', $path);
+    foreach ($segments as $segment) {
+        if (
+            $segment === ''
+            || $segment === '.'
+            || $segment === '..'
+            || preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]*$/', $segment) !== 1
+        ) {
+            return url('assets/img/downlight.svg');
+        }
+    }
+
+    return url('assets/' . implode('/', array_map('rawurlencode', $segments)));
 }
 
 function icon(string $name, string $class = ''): string
@@ -157,7 +202,10 @@ function product_configuration(array $product): array
 {
     global $productConfigurations;
     $category = (string) ($product['category'] ?? '');
-    $config = $productConfigurations[$product['sku']] ?? $productConfigurations[$category] ?? $productConfigurations['default'];
+    $databaseSchema = $product['configuration_schema'] ?? null;
+    $config = is_array($databaseSchema) && $databaseSchema !== []
+        ? $databaseSchema
+        : ($productConfigurations[$product['sku']] ?? $productConfigurations[$category] ?? $productConfigurations['default']);
     return array_merge([
         'price_mode' => 'fixed',
         'sku_order' => ['series'],
@@ -253,6 +301,14 @@ if ($path === '') {
 } elseif ($path === 'cart') {
     $page = ['title' => 'Project Cart', 'description' => 'Review configured products and submit a commercial lighting project request.', 'path' => 'cart', 'section' => 'cart'];
     $template = 'cart';
+} elseif (in_array($path, ['lighting-simulation', 'ai/lighting-simulation'], true)) {
+    $page = [
+        'title' => 'AI Lighting Simulation',
+        'description' => 'Estimate fixture quantity, layout and direct illuminance from product IES photometry.',
+        'path' => 'lighting-simulation',
+        'section' => 'lighting-simulation',
+    ];
+    $template = 'lighting-simulation';
 } elseif (preg_match('#^(product|configure)/([A-Za-z0-9-]+)$#', $path, $matches)) {
     $product = find_product($matches[2]);
     if ($product) {
