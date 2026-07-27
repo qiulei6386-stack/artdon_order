@@ -54,11 +54,18 @@ The cleanup scope is deliberately conservative:
   simulations, and active attachment files are never deletion candidates.
 
 Stale rate-limit files are also removed opportunistically by the bounded
-limiter housekeeping path. Attachment storage fails closed before files are
-moved when either the durable 2 GB application quota or the 1 GB filesystem
-reserve would be crossed. Deployments may adjust those byte limits with
-`ARTDON_UPLOAD_QUOTA_BYTES` and `ARTDON_UPLOAD_FREE_RESERVE_BYTES`, but only
-alongside a monitored disk-capacity policy.
+limiter housekeeping path. General API limiter state defaults to the protected
+`storage/api-rate-limits` directory, while lighting simulation limiter state
+defaults to `storage/rate-limits`. Tests and multi-release deployments can
+isolate those locations with `ARTDON_API_RATE_LIMIT_PATH` and
+`ARTDON_RATE_LIMIT_PATH`; both directories must be writable by the PHP-FPM
+user and must remain outside public downloads.
+
+Attachment storage fails closed before files are moved when either the durable
+2 GB application quota or the 1 GB filesystem reserve would be crossed.
+Deployments may adjust those byte limits with `ARTDON_UPLOAD_QUOTA_BYTES` and
+`ARTDON_UPLOAD_FREE_RESERVE_BYTES`, but only alongside a monitored
+disk-capacity policy.
 
 Run cleanup from cron only with an explicit `--apply`, redirect its output to
 the operations log, and alert on a non-zero exit status.

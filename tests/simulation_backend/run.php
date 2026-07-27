@@ -14,6 +14,7 @@ if (!mkdir($temporaryRoot, 0750, true) && !is_dir($temporaryRoot)) {
 }
 putenv('APP_DATABASE_PATH=' . $temporaryRoot . '/artdon.sqlite');
 putenv('ARTDON_RATE_LIMIT_PATH=' . $temporaryRoot . '/rate-limits');
+putenv('ARTDON_API_RATE_LIMIT_PATH=' . $temporaryRoot . '/api-rate-limits-live');
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_id('artdon-simulation-backend-test');
@@ -190,6 +191,19 @@ try {
     simulationTest(
         $removedRateFiles === 1 && !is_file($staleRateFile) && is_file($freshRateFile),
         'stale rate-limit state is removed without deleting current windows'
+    );
+    $_SERVER['REMOTE_ADDR'] = '203.0.113.25';
+    api_rate_limit('api-test', 3, 60);
+    api_rate_limit('api-test', 3, 60);
+    $liveApiRateFiles = glob($temporaryRoot . '/api-rate-limits-live/*.json') ?: [];
+    simulationTest(
+        count($liveApiRateFiles) === 1,
+        'the shared API limiter stores state under its protected configured directory'
+    );
+    $liveApiRateContents = file_get_contents($liveApiRateFiles[0]);
+    simulationTest(
+        is_string($liveApiRateContents) && !str_contains($liveApiRateContents, '203.0.113.25'),
+        'the shared API limiter does not store the raw client address'
     );
     $apiRateDirectory = $temporaryRoot . '/api-rate-limits';
     mkdir($apiRateDirectory, 0750, true);

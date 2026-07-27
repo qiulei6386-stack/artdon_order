@@ -164,56 +164,121 @@ function api_cleanup_rate_limit_files(
 
 function api_rate_limit(string $scope, int $maximum, int $windowSeconds): void
 {
-    $scope = strtolower((string) preg_replace('/[^a-z0-9_-]/i', '', $scope));
-    if ($scope === '' || $maximum < 1 || $windowSeconds < 1) {
+    $scope = substr(
+        strtolower((string) preg_replace('/[^a-z0-9_-]/i', '', $scope)),
+        0,
+        64
+    );
+    if (
+        $scope === ''
+        || $maximum < 1
+        || $maximum > 10_000
+        || $windowSeconds < 1
+        || $windowSeconds > 86_400
+    ) {
         throw new InvalidArgumentException('Invalid API rate-limit configuration.');
     }
 
-    $directory = sys_get_temp_dir() . '/artdon-rate-limits';
-    if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
+    $configuredDirectory = trim((string) (getenv('ARTDON_API_RATE_LIMIT_PATH') ?: ''));
+    if ($configuredDirectory !== '' && !str_starts_with($configuredDirectory, DIRECTORY_SEPARATOR)) {
         api_respond(503, ['success' => false, 'message' => 'The service is temporarily unavailable.']);
     }
-    @chmod($directory, 0700);
+    $directory = $configuredDirectory !== ''
+        ? $configuredDirectory
+        : dirname(__DIR__) . '/storage/api-rate-limits';
+    if (is_link($directory)) {
+        api_respond(503, ['success' => false, 'message' => 'The service is temporarily unavailable.']);
+    }
+    if (!is_dir($directory) && !@mkdir($directory, 0750, true) && !is_dir($directory)) {
+        api_respond(503, ['success' => false, 'message' => 'The service is temporarily unavailable.']);
+    }
+    clearstatcache(true, $directory);
+    if (is_link($directory) || !is_dir($directory) || !is_writable($directory)) {
+        api_respond(503, ['success' => false, 'message' => 'The service is temporarily unavailable.']);
+    }
 
     $now = time();
     $bucket = intdiv($now, $windowSeconds);
     $key = hash('sha256', $scope . '|' . (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
-    $path = $directory . '/' . $scope . '-' . $key . '.json';
-    $handle = fopen($path, 'c+');
-    if ($handle === false || !flock($handle, LOCK_EX)) {
-        if (is_resource($handle)) {
-            fclose($handle);
+    $path = rtrim($directory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
+        . $scope . '-' . $key . '.json';
+    if (is_link($path)) {
+        api_respond(503, ['success' => false, 'message' => 'The service is temporarily unavailable.']);
+    }
+    $handle = @fopen($path, 'c+');
+    if ($handle === false) {
+        api_respond(503, ['success' => false, 'message' => 'The service is temporarily unavailable.']);
+    }
+    @chmod($path, 0640);
+
+    $lockAcquired = false;
+    $lockDeadline = microtime(true) + 0.1;
+    do {
+        $lockAcquired = @flock($handle, LOCK_EX | LOCK_NB);
+        if (!$lockAcquired) {
+            usleep(2_000);
         }
+    } while (!$lockAcquired && microtime(true) < $lockDeadline);
+    if (!$lockAcquired) {
+        fclose($handle);
         api_respond(503, ['success' => false, 'message' => 'The service is temporarily unavailable.']);
     }
 
     $retryAfter = null;
+    $storageFailure = false;
     try {
-        $contents = stream_get_contents($handle);
-        $state = is_string($contents) && $contents !== ''
-            ? json_decode($contents, true)
-            : null;
-        $count = is_array($state) && (int) ($state['bucket'] ?? -1) === $bucket
-            ? max(0, (int) ($state['count'] ?? 0))
-            : 0;
-        if ($count >= $maximum) {
-            $retryAfter = max(1, (($bucket + 1) * $windowSeconds) - $now);
-        } else {
-            rewind($handle);
-            ftruncate($handle, 0);
-            fwrite($handle, json_encode([
-                'bucket' => $bucket,
-                'count' => $count + 1,
-                'updated_at' => $now,
-            ], JSON_THROW_ON_ERROR));
-            fflush($handle);
-            @chmod($path, 0600);
+        $contents = stream_get_contents($handle, 16_385);
+        $state = null;
+        if (!is_string($contents) || strlen($contents) > 16_384) {
+            $storageFailure = true;
+        } elseif ($contents !== '') {
+            $state = json_decode($contents, true);
+            if (
+                !is_array($state)
+                || !is_int($state['bucket'] ?? null)
+                || !is_int($state['count'] ?? null)
+                || (int) $state['count'] < 0
+            ) {
+                $storageFailure = true;
+            }
         }
+
+        if (!$storageFailure) {
+            $count = is_array($state) && (int) $state['bucket'] === $bucket
+                ? (int) $state['count']
+                : 0;
+            if ($count >= $maximum) {
+                $retryAfter = max(1, (($bucket + 1) * $windowSeconds) - $now);
+            } else {
+                $encoded = json_encode([
+                    'bucket' => $bucket,
+                    'count' => $count + 1,
+                    'updated_at' => $now,
+                ], JSON_THROW_ON_ERROR);
+                $written = false;
+                if (@rewind($handle) && @ftruncate($handle, 0)) {
+                    $written = @fwrite($handle, $encoded);
+                }
+                if (
+                    $written !== strlen($encoded)
+                    || !@fflush($handle)
+                ) {
+                    $storageFailure = true;
+                } else {
+                    @chmod($path, 0640);
+                }
+            }
+        }
+    } catch (Throwable) {
+        $storageFailure = true;
     } finally {
-        flock($handle, LOCK_UN);
+        @flock($handle, LOCK_UN);
         fclose($handle);
     }
 
+    if ($storageFailure) {
+        api_respond(503, ['success' => false, 'message' => 'The service is temporarily unavailable.']);
+    }
     if ($retryAfter !== null) {
         if (!headers_sent()) {
             header('Retry-After: ' . $retryAfter);

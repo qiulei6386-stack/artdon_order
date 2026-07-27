@@ -297,7 +297,14 @@ try {
         ]
     );
     $cart = http_e2e_json($cartResponse, 'Project Cart');
-    http_e2e_assert($cartResponse['status'] === 200, 'simulation adds to Project Cart');
+    http_e2e_assert(
+        $cartResponse['status'] === 200,
+        sprintf(
+            'simulation adds to Project Cart (status %d, response %s)',
+            $cartResponse['status'],
+            substr($cartResponse['body'], 0, 500)
+        )
+    );
     http_e2e_assert(
         count((array) ($cart['data']['cart']['items'] ?? [])) === 1,
         'Project Cart contains one validated line'
