@@ -109,6 +109,13 @@ try {
         str_contains($page['body'], 'data-lighting-simulation'),
         'simulation page contains its application root'
     );
+    http_e2e_assert(
+        preg_match(
+            '/name="target_lux"[^>]*min="10"[^>]*step="10"[^>]*value="400"/',
+            $page['body']
+        ) === 1,
+        'the default target illuminance is valid against the browser step constraint'
+    );
     if (preg_match('/csrf:(\"[a-f0-9]+\")/', $page['body'], $csrfMatch) !== 1) {
         throw new RuntimeException('The simulation page did not expose a test CSRF token.');
     }

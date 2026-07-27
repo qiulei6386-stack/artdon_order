@@ -91,7 +91,7 @@ $initialProduct = trim((string) ($_GET['product'] ?? ''));
                         </label>
                         <label class="simulation-field">
                             <span>Target illuminance</span>
-                            <div><input type="number" name="target_lux" min="1" max="5000" step="10" value="400" required data-simulation-target><b>lux</b></div>
+                            <div><input type="number" name="target_lux" min="10" max="5000" step="10" value="400" required data-simulation-target><b>lux</b></div>
                             <small data-simulation-target-note>Retail starting point: 300–500 lux. Confirm the applicable project standard.</small>
                         </label>
                     </section>
