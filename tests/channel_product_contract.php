@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 $source = file_get_contents(dirname(__DIR__) . '/api/channel_product.php');
+$productTemplate = file_get_contents(dirname(__DIR__) . '/templates/product.php');
 $checks = [
     'HMAC verification' => str_contains($source, 'hash_hmac') && str_contains($source, 'hash_equals'),
     'replay window' => str_contains($source, '> 300'),
@@ -12,6 +13,7 @@ $checks = [
     'media synchronization' => str_contains($source, 'cms_media') && str_contains($source, "'media:' . \$publicId"),
     'audit trail' => str_contains($source, 'channel.product.upsert'),
     'private storage secret' => str_contains($source, "/storage/channel_sync_secret"),
+    'product detail configurations' => str_contains($productTemplate, 'Published configurations') && str_contains($productTemplate, 'configurationValues'),
 ];
 foreach ($checks as $label => $passed) {
     if (!$passed) { fwrite(STDERR, "FAIL: {$label}\n"); exit(1); }
