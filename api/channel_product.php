@@ -28,7 +28,7 @@ try {
     $timestamp = $header('X-Artdon-Timestamp');
     $signature = strtolower($header('X-Artdon-Signature'));
     $idempotencyKey = $header('Idempotency-Key');
-    $secret = trim((string)@file_get_contents('/www/secure/artdon_singapore_channel.key'));
+    $secret = trim((string)@file_get_contents(dirname(__DIR__) . '/storage/channel_sync_secret'));
     if ($secret === '' || !ctype_digit($timestamp) || abs(time() - (int)$timestamp) > 300
         || !preg_match('/^[a-f0-9]{64}$/', $signature)
         || !hash_equals(hash_hmac('sha256', $timestamp . '.' . $body, $secret), $signature)) {
