@@ -14,6 +14,9 @@ $checks = [
     'audit trail' => str_contains($source, 'channel.product.upsert'),
     'private storage secret' => str_contains($source, "/storage/channel_sync_secret"),
     'product detail configurations' => str_contains($productTemplate, 'Published configurations') && str_contains($productTemplate, 'configurationValues'),
+    'unpublish event' => str_contains($source, "'product.unpublish'") && str_contains($source, "status='inactive'"),
+    'disable ordering' => str_contains($source, 'order_enabled=0') && str_contains($source, 'sample_enabled=0'),
+    'archive configurations' => str_contains($source, "status='archived'") && str_contains($source, 'configurations_disabled'),
 ];
 foreach ($checks as $label => $passed) {
     if (!$passed) { fwrite(STDERR, "FAIL: {$label}\n"); exit(1); }

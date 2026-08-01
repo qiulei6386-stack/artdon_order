@@ -36,19 +36,21 @@ try {
     }
     if ($idempotencyKey === '' || strlen($idempotencyKey) > 190) $reply(['ok' => false, 'message' => 'Invalid idempotency key.'], 400);
     $payload = json_decode($body, true, 128, JSON_THROW_ON_ERROR);
-    if (($payload['event_type'] ?? '') !== 'product.upsert' || !is_array($payload['product'] ?? null)) {
+    $eventType = (string)($payload['event_type'] ?? '');
+    if (!in_array($eventType, ['product.upsert', 'product.unpublish'], true) || !is_array($payload['product'] ?? null)) {
         $reply(['ok' => false, 'message' => 'Unsupported payload.'], 422);
     }
     $product = $payload['product'];
     $sku = trim((string)($product['sku'] ?? ''));
     $name = trim((string)($product['name'] ?? ''));
-    if ($sku === '' || $name === '' || strlen($sku) > 120 || strlen($name) > 190) {
+    if ($sku === '' || strlen($sku) > 120 || ($eventType === 'product.upsert' && ($name === '' || strlen($name) > 190))) {
         $reply(['ok' => false, 'message' => 'Product SKU or name is invalid.'], 422);
     }
 
     $pdo = artdon_db_open_ready();
-    $duplicate = $pdo->prepare("SELECT entity_id,after_json FROM audit_logs WHERE action='channel.product.upsert' AND request_id=:request_id ORDER BY id DESC LIMIT 1");
-    $duplicate->execute([':request_id' => $idempotencyKey]);
+    $auditAction = $eventType === 'product.unpublish' ? 'channel.product.unpublish' : 'channel.product.upsert';
+    $duplicate = $pdo->prepare("SELECT entity_id,after_json FROM audit_logs WHERE action=:action AND request_id=:request_id ORDER BY id DESC LIMIT 1");
+    $duplicate->execute([':action' => $auditAction, ':request_id' => $idempotencyKey]);
     if ($previous = $duplicate->fetch(PDO::FETCH_ASSOC)) {
         $reply(['ok' => true, 'idempotent' => true, 'external_reference' => 'SG-PRODUCT-' . $previous['entity_id'],
             'product' => json_decode((string)$previous['after_json'], true)]);
@@ -57,6 +59,25 @@ try {
     $existing = $pdo->prepare('SELECT * FROM products WHERE sku=:sku LIMIT 1');
     $existing->execute([':sku' => $sku]);
     $before = $existing->fetch(PDO::FETCH_ASSOC) ?: null;
+    if ($eventType === 'product.unpublish') {
+        if ($before === null) $reply(['ok' => false, 'message' => 'Product was not found.'], 404);
+        $now = gmdate('Y-m-d H:i:s');
+        $pdo->beginTransaction();
+        $pdo->prepare("UPDATE products SET status='inactive',order_enabled=0,sample_enabled=0,synced_at=:now,updated_at=:now WHERE id=:id")
+            ->execute([':now' => $now, ':id' => (int)$before['id']]);
+        $pdo->prepare("UPDATE product_configuration_schemas SET status='archived',updated_at=:now WHERE product_id=:product_id AND status='active'")
+            ->execute([':now' => $now, ':product_id' => (int)$before['id']]);
+        $after = ['id' => (int)$before['id'], 'sku' => $sku, 'status' => 'inactive', 'order_enabled' => 0];
+        $pdo->prepare('INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,request_id,before_json,after_json,metadata_json,created_at) VALUES(\'channel\',\'guangzhou-commercial-center\',:action,\'product\',:entity_id,:request_id,:before_json,:after_json,:metadata_json,:created_at)')
+            ->execute([':action' => $auditAction, ':entity_id' => (string)$before['id'], ':request_id' => $idempotencyKey,
+                ':before_json' => json_encode($before, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+                ':after_json' => json_encode($after, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+                ':metadata_json' => json_encode(['payload_hash' => hash('sha256', $body), 'reason' => (string)($product['reason'] ?? '')], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+                ':created_at' => $now]);
+        $pdo->commit();
+        $reply(['ok' => true, 'idempotent' => false, 'external_reference' => 'SG-PRODUCT-' . $before['id'],
+            'product' => $after, 'configurations_disabled' => true]);
+    }
     $dimensions = is_array($product['dimensions'] ?? null) ? $product['dimensions'] : [];
     $specs = array_filter([
         'Mounting' => trim((string)($product['lamp_type'] ?? '')),
