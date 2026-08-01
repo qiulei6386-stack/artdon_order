@@ -8,6 +8,8 @@ $checks = [
     'idempotency' => str_contains($source, "header('Idempotency-Key')") && str_contains($source, 'request_id'),
     'product upsert' => str_contains($source, 'ON CONFLICT(sku) DO UPDATE'),
     'configuration versions' => str_contains($source, 'product_configuration_schemas'),
+    'image allowlist' => str_contains($source, "'artdonlighting.com'") && str_contains($source, 'CURLPROTO_HTTPS'),
+    'media synchronization' => str_contains($source, 'cms_media') && str_contains($source, "'media:' . \$publicId"),
     'audit trail' => str_contains($source, 'channel.product.upsert'),
     'private storage secret' => str_contains($source, "/storage/channel_sync_secret"),
 ];

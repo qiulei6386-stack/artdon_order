@@ -88,8 +88,53 @@ try {
     $categoryText = strtolower((string)($product['category'] ?? ''));
     $category = str_contains($categoryText, '嵌入') || str_contains($categoryText, 'recess') ? 'recessed-downlights' : 'products';
     $imagePath = (string)($before['image_path'] ?? '');
+    $media = null;
+    $temporaryImage = null;
+    $imageUrl = trim((string)($product['image_url'] ?? ''));
+    if ($imageUrl !== '') {
+        $parts = parse_url($imageUrl);
+        $host = strtolower((string)($parts['host'] ?? ''));
+        if (($parts['scheme'] ?? '') !== 'https' || !in_array($host, ['novlight.com', 'www.novlight.com', 'artdonlighting.com', 'www.artdonlighting.com'], true)) {
+            throw new InvalidArgumentException('Product image host is not allowed.');
+        }
+        $temporaryImage = tempnam(sys_get_temp_dir(), 'artdon-channel-image-');
+        if ($temporaryImage === false) throw new RuntimeException('Unable to create image staging file.');
+        $handle = fopen($temporaryImage, 'wb');
+        $curl = curl_init($imageUrl);
+        curl_setopt_array($curl, [CURLOPT_FILE => $handle, CURLOPT_FOLLOWLOCATION => false, CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_TIMEOUT => 30, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS, CURLOPT_MAXFILESIZE => 10 * 1024 * 1024]);
+        $downloaded = curl_exec($curl);
+        $httpStatus = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+        curl_close($curl);
+        fclose($handle);
+        if ($downloaded !== true || $httpStatus !== 200 || !is_file($temporaryImage) || filesize($temporaryImage) < 1 || filesize($temporaryImage) > 10 * 1024 * 1024) {
+            throw new RuntimeException('Unable to download product image.');
+        }
+        $imageInfo = getimagesize($temporaryImage);
+        $mime = is_array($imageInfo) ? (string)($imageInfo['mime'] ?? '') : '';
+        $extensions = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+        if (!isset($extensions[$mime]) || (int)$imageInfo[0] < 1 || (int)$imageInfo[1] < 1) throw new RuntimeException('Downloaded product image is invalid.');
+        $checksum = hash_file('sha256', $temporaryImage);
+        $storedName = $checksum . '.' . $extensions[$mime];
+        $publicId = 'channel_' . substr($checksum, 0, 32);
+        $media = ['public_id' => $publicId, 'stored_name' => $storedName, 'mime' => $mime, 'width' => (int)$imageInfo[0],
+            'height' => (int)$imageInfo[1], 'size' => (int)filesize($temporaryImage), 'checksum' => $checksum,
+            'target' => dirname(__DIR__) . '/storage/cms-media/' . $storedName];
+        if (!is_file($media['target']) && !copy($temporaryImage, $media['target'])) throw new RuntimeException('Unable to store product image.');
+        chmod($media['target'], 0640);
+        $imagePath = 'media:' . $publicId;
+    }
 
     $pdo->beginTransaction();
+    if ($media !== null) {
+        $pdo->prepare('INSERT INTO cms_media(public_id,original_name,stored_name,mime_type,width,height,file_size,checksum_sha256,alt_text,status,created_at,updated_at)
+            VALUES(:public_id,:original_name,:stored_name,:mime_type,:width,:height,:file_size,:checksum,:alt_text,\'active\',:created_at,:updated_at)
+            ON CONFLICT(public_id) DO UPDATE SET alt_text=excluded.alt_text,status=\'active\',updated_at=excluded.updated_at')
+            ->execute([':public_id' => $media['public_id'], ':original_name' => $sku . '.' . pathinfo($media['stored_name'], PATHINFO_EXTENSION),
+                ':stored_name' => $media['stored_name'], ':mime_type' => $media['mime'], ':width' => $media['width'], ':height' => $media['height'],
+                ':file_size' => $media['size'], ':checksum' => $media['checksum'], ':alt_text' => $sku . ' ' . $name,
+                ':created_at' => $now, ':updated_at' => $now]);
+    }
     $statement = $pdo->prepare('INSERT INTO products (source_system,source_id,source_version,sku,slug,name,series_code,category_slug,subcategory_slug,stock_group,summary,description,specs_json,features_json,image_path,badge,status,order_enabled,sample_enabled,price_mode,base_currency,base_price,default_moq,lead_time_text,stock_quantity,is_new,is_clearance,synced_at,created_at,updated_at)
         VALUES (:source_system,:source_id,:source_version,:sku,:slug,:name,:series,:category,:subcategory,:stock_group,:summary,:description,:specs,:features,:image,:badge,:status,:order_enabled,0,:price_mode,:currency,NULL,:moq,:lead_time,:stock,1,0,:synced_at,:created_at,:updated_at)
         ON CONFLICT(sku) DO UPDATE SET source_system=excluded.source_system,source_id=excluded.source_id,source_version=excluded.source_version,name=excluded.name,series_code=excluded.series_code,category_slug=excluded.category_slug,subcategory_slug=excluded.subcategory_slug,stock_group=excluded.stock_group,summary=excluded.summary,description=excluded.description,specs_json=excluded.specs_json,features_json=excluded.features_json,image_path=CASE WHEN excluded.image_path<>\'\' THEN excluded.image_path ELSE products.image_path END,status=excluded.status,order_enabled=excluded.order_enabled,price_mode=excluded.price_mode,base_currency=excluded.base_currency,base_price=NULL,default_moq=excluded.default_moq,lead_time_text=excluded.lead_time_text,stock_quantity=excluded.stock_quantity,synced_at=excluded.synced_at,updated_at=excluded.updated_at');
@@ -119,9 +164,12 @@ try {
             ':before_json' => $before ? json_encode($before, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) : null, ':after_json' => $afterJson,
             ':metadata_json' => json_encode(['payload_hash' => hash('sha256', $body)], JSON_THROW_ON_ERROR), ':created_at' => $now]);
     $pdo->commit();
-    $reply(['ok' => true, 'idempotent' => false, 'external_reference' => 'SG-PRODUCT-' . $productId, 'product' => $stored]);
+    if (is_string($temporaryImage) && is_file($temporaryImage)) @unlink($temporaryImage);
+    $reply(['ok' => true, 'idempotent' => false, 'external_reference' => 'SG-PRODUCT-' . $productId, 'product' => $stored,
+        'media_synced' => $media !== null, 'configuration_count' => count($values)]);
 } catch (Throwable $error) {
     if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) $pdo->rollBack();
+    if (isset($temporaryImage) && is_string($temporaryImage) && is_file($temporaryImage)) @unlink($temporaryImage);
     error_log('Channel product sync failed: ' . $error->getMessage());
     $reply(['ok' => false, 'message' => 'Product sync failed.'], 500);
 }
