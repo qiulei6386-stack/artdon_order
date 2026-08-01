@@ -12,14 +12,22 @@ $reply = static function (array $data, int $status = 200): never {
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 };
+$header = static function (string $name): string {
+    $serverKey = 'HTTP_' . strtoupper(str_replace('-', '_', $name));
+    if (isset($_SERVER[$serverKey])) return trim((string)$_SERVER[$serverKey]);
+    foreach (function_exists('getallheaders') ? (array)getallheaders() : [] as $key => $value) {
+        if (strcasecmp((string)$key, $name) === 0) return trim((string)$value);
+    }
+    return '';
+};
 
 try {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') $reply(['ok' => false, 'message' => 'Method not allowed.'], 405);
     $body = (string)file_get_contents('php://input');
     if ($body === '' || strlen($body) > 1048576) $reply(['ok' => false, 'message' => 'Invalid request body.'], 400);
-    $timestamp = (string)($_SERVER['HTTP_X_ARTDON_TIMESTAMP'] ?? '');
-    $signature = strtolower((string)($_SERVER['HTTP_X_ARTDON_SIGNATURE'] ?? ''));
-    $idempotencyKey = trim((string)($_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? ''));
+    $timestamp = $header('X-Artdon-Timestamp');
+    $signature = strtolower($header('X-Artdon-Signature'));
+    $idempotencyKey = $header('Idempotency-Key');
     $secret = trim((string)@file_get_contents('/www/secure/artdon_singapore_channel.key'));
     if ($secret === '' || !ctype_digit($timestamp) || abs(time() - (int)$timestamp) > 300
         || !preg_match('/^[a-f0-9]{64}$/', $signature)
