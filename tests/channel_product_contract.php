@@ -17,6 +17,12 @@ $checks = [
     'unpublish event' => str_contains($source, "'product.unpublish'") && str_contains($source, "status='inactive'"),
     'disable ordering' => str_contains($source, 'order_enabled=0') && str_contains($source, 'sample_enabled=0'),
     'archive configurations' => str_contains($source, "status='archived'") && str_contains($source, 'configurations_disabled'),
+    'material parameters become specs' => str_contains($source, 'channel_product_specs_from_payload')
+        && str_contains($source, "'technical_parameters'")
+        && str_contains($source, "'parameters'")
+        && str_contains($source, "'material_center_parameters'")
+        && str_contains($source, "'Cut-out'")
+        && str_contains($source, "'Outer diameter'"),
 ];
 foreach ($checks as $label => $passed) {
     if (!$passed) { fwrite(STDERR, "FAIL: {$label}\n"); exit(1); }

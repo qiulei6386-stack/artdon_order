@@ -20,6 +20,62 @@ $header = static function (string $name): string {
     }
     return '';
 };
+function channel_product_spec_value($value): string
+{
+    if (is_bool($value)) return $value ? 'Yes' : 'No';
+    if (is_scalar($value)) return trim((string)$value);
+    if (!is_array($value)) return '';
+    foreach (['value', 'text', 'display', 'display_value'] as $key) {
+        if (array_key_exists($key, $value)) return channel_product_spec_value($value[$key]);
+    }
+    $parts = [];
+    foreach ($value as $item) {
+        $part = channel_product_spec_value($item);
+        if ($part !== '') $parts[] = $part;
+    }
+    return trim(implode(' / ', array_unique($parts)));
+}
+function channel_product_spec_has_label(array $specs, string $label): bool
+{
+    foreach (array_keys($specs) as $existing) {
+        if (strcasecmp((string)$existing, $label) === 0) return true;
+    }
+    return false;
+}
+function channel_product_add_spec(array &$specs, string $label, $value): void
+{
+    $label = trim($label);
+    $value = channel_product_spec_value($value);
+    if ($label === '' || $value === '' || channel_product_spec_has_label($specs, $label)) return;
+    $specs[$label] = $value;
+}
+function channel_product_specs_from_payload(array $product): array
+{
+    $specs = [];
+    foreach (['technical_parameters', 'parameters', 'material_center_parameters'] as $field) {
+        if (!is_array($product[$field] ?? null)) continue;
+        foreach ($product[$field] as $label => $value) {
+            if (is_array($value)) {
+                $rowLabel = trim((string)($value['label'] ?? $value['name'] ?? $value['key'] ?? ''));
+                if ($rowLabel !== '') {
+                    channel_product_add_spec($specs, $rowLabel, $value);
+                    continue;
+                }
+            }
+            channel_product_add_spec($specs, (string)$label, $value);
+        }
+        if ($specs !== []) break;
+    }
+
+    $dimensions = is_array($product['dimensions'] ?? null) ? $product['dimensions'] : [];
+    channel_product_add_spec($specs, 'Mounting', trim((string)($product['lamp_type'] ?? '')));
+    channel_product_add_spec($specs, 'Cut-out', ($dimensions['opening'] ?? '') !== '' ? (string)$dimensions['opening'] . ' mm' : '');
+    channel_product_add_spec($specs, 'Outer diameter', ($dimensions['outer_diameter'] ?? '') !== '' ? (string)$dimensions['outer_diameter'] . ' mm' : '');
+    channel_product_add_spec($specs, 'Length', ($dimensions['length'] ?? '') !== '' ? (string)$dimensions['length'] . ' mm' : '');
+    channel_product_add_spec($specs, 'Width', ($dimensions['width'] ?? '') !== '' ? (string)$dimensions['width'] . ' mm' : '');
+    channel_product_add_spec($specs, 'Height', ($dimensions['height'] ?? '') !== '' ? (string)$dimensions['height'] . ' mm' : '');
+    return $specs;
+}
 
 try {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') $reply(['ok' => false, 'message' => 'Method not allowed.'], 405);
@@ -78,15 +134,7 @@ try {
         $reply(['ok' => true, 'idempotent' => false, 'external_reference' => 'SG-PRODUCT-' . $before['id'],
             'product' => $after, 'configurations_disabled' => true]);
     }
-    $dimensions = is_array($product['dimensions'] ?? null) ? $product['dimensions'] : [];
-    $specs = array_filter([
-        'Mounting' => trim((string)($product['lamp_type'] ?? '')),
-        'Cut-out' => ($dimensions['opening'] ?? '') !== '' ? (string)$dimensions['opening'] . ' mm' : '',
-        'Outer diameter' => ($dimensions['outer_diameter'] ?? '') !== '' ? (string)$dimensions['outer_diameter'] . ' mm' : '',
-        'Length' => ($dimensions['length'] ?? '') !== '' ? (string)$dimensions['length'] . ' mm' : '',
-        'Width' => ($dimensions['width'] ?? '') !== '' ? (string)$dimensions['width'] . ' mm' : '',
-        'Height' => ($dimensions['height'] ?? '') !== '' ? (string)$dimensions['height'] . ' mm' : '',
-    ], static fn(string $value): bool => $value !== '');
+    $specs = channel_product_specs_from_payload($product);
     $configuration = is_array($product['configuration'] ?? null) ? $product['configuration'] : [];
     $schemes = is_array($configuration['schemes'] ?? null) ? array_values($configuration['schemes']) : [];
     $values = [];
